@@ -103,3 +103,58 @@ from projtools import projcode
 ```{python}
 projcode.my_func(5, 3)
 ```
+
+```{python}
+import pandas as pd
+import numpy as np
+df = pd.read_csv('data/data/data-school-shootings/school-shootings-data.csv')
+```
+
+```{python}
+df.columns
+```
+
+```{python}
+df['hispanic'] = df['hispanic'].str.replace(',', '')
+```
+
+```{python}
+(df[['white','black','hispanic','asian','american_indian_alaska_native', 'hawaiian_native_pacific_islander','two_or_more',]]
+ .replace(np.nan, 0)
+ .astype(float)
+ .sum(axis=1))
+```
+
+```{python}
+df['percent_white'] = (df['white'] / df[['white','black','hispanic','asian','american_indian_alaska_native', 'hawaiian_native_pacific_islander','two_or_more',]]
+                       .replace(np.nan, 0)
+                       .astype(float)
+                       .sum(axis=1)
+                       * 100)
+```
+
+```{python}
+df['percent_black'] = (df['black'] / df[['white','black','hispanic','asian','american_indian_alaska_native', 'hawaiian_native_pacific_islander','two_or_more',]]
+                       .replace(np.nan, 0)
+                       .astype(float)
+                       .sum(axis=1)
+                       * 100)
+```
+
+```{python}
+df['percent_white']
+```
+
+```{python}
+plt.scatter(df['percent_black'], df['casualties'])
+```
+
+```{python}
+df['race_ethnicity_shooter1'].value_counts()
+```
+
+```{python}
+def percent_same_ethnicity_as_shooter(df):
+    shooter_ethnicity = df['race_ethnicity_shooter1']
+    df[['white','black','hispanic','asian','american_indian_alaska_native', 'hawaiian_native_pacific_islander','two_or_more',]]
+```
