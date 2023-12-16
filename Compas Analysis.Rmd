@@ -1,0 +1,891 @@
+---
+jupyter:
+  jupytext:
+    text_representation:
+      extension: .Rmd
+      format_name: rmarkdown
+      format_version: '1.2'
+      jupytext_version: 1.16.0
+  kernelspec:
+    display_name: Python 3 (ipykernel)
+    language: python
+    name: python3
+---
+
+# Compas Analysis
+
+What follows are the calculations performed for ProPublica's analaysis of the COMPAS Recidivism Risk Scores. It might be helpful to open [the methodology](https://www.propublica.org/article/how-we-analyzed-the-compas-recidivism-algorithm/) in another tab to understand the following.
+
+## Loading the Data
+
+We select fields for severity of charge, number of priors, demographics, age, sex, compas scores, and whether each person was accused of a crime within two years.
+
+```{python}
+# filter dplyr warnings
+# #%load_ext rpy2.ipython
+#import warnings
+#warnings.filterwarnings('ignore')
+```
+
+```{python}
+import numpy as np
+import pandas as pd
+from matplotlib import pyplot as plt
+import math
+```
+
+```{python}
+# #%%R
+#library(dplyr)
+#library(ggplot2)
+#raw_data <- read.csv("./compas-scores-two-years.csv")
+#nrow(raw_data)
+```
+
+```{python}
+raw_data = pd.read_csv('CompasAnalysis/compas-scores-two-years.csv')
+```
+
+However not all of the rows are useable for the first round of analysis.
+
+There are a number of reasons remove rows because of missing data:
+* If the charge date of a defendants Compas scored crime was not within 30 days from when the person was arrested, we assume that because of data quality reasons, that we do not have the right offense.
+* We coded the recidivist flag -- `is_recid` -- to be -1 if we could not find a compas case at all.
+* In a similar vein, ordinary traffic offenses -- those with a `c_charge_degree` of 'O' -- will not result in Jail time are removed (only two of them).
+* We filtered the underlying data from Broward county to include only those rows representing people who had either recidivated in two years, or had at least two years outside of a correctional facility.
+
+```{python}
+# #%%R
+#df <- dplyr::select(raw_data, age, c_charge_degree, race, age_cat, score_text, sex, priors_count, 
+#                    days_b_screening_arrest, decile_score, is_recid, two_year_recid, c_jail_in, c_jail_out) %>% 
+#        filter(days_b_screening_arrest <= 30) %>%
+#        filter(days_b_screening_arrest >= -30) %>%
+#        filter(is_recid != -1) %>%
+#        filter(c_charge_degree != "O") %>%
+#        filter(score_text != 'N/A')
+#nrow(df)
+```
+
+```{python}
+df = raw_data[['age','c_charge_degree', 'race', 'age_cat', 'score_text', 'sex', 'priors_count','days_b_screening_arrest', 'decile_score', 'is_recid', 'two_year_recid', 'c_jail_in', 'c_jail_out']]
+df = df[df['days_b_screening_arrest'] <= 30]
+df = df[df['days_b_screening_arrest'] >= -30]
+df = df[df['is_recid'] != -1]
+df = df[df['c_charge_degree'] != '0']
+df = df[df['score_text'] != 'N/A']
+assert len(df) == 6172
+```
+
+Higher COMPAS scores are slightly correlated with a longer length of stay. 
+
+```{python}
+# #%%R
+#df$length_of_stay <- as.numeric(as.Date(df$c_jail_out) - as.Date(df$c_jail_in))
+#cor(df$length_of_stay, df$decile_score)
+```
+
+```{python}
+df['length_of_stay'] = (pd.to_numeric(pd.to_datetime(df['c_jail_out'])) - pd.to_numeric(pd.to_datetime(df['c_jail_in'])))
+stay_length_score_correlation = df[['length_of_stay','decile_score']].corr().iloc[0,1]
+assert round(stay_length_score_correlation,3) == round(0.2073297,3)
+```
+
+After filtering we have the following demographic breakdown:
+
+```{python}
+# #%%R
+#summary(df$age_cat)
+```
+
+```{python}
+df['age_cat'].value_counts()
+```
+
+```{python}
+# #%%R
+#summary(df$race)
+```
+
+```{python}
+df['race'].value_counts()
+```
+
+```{python}
+#print("Black defendants: %.2f%%" %            (3175 / 6172 * 100))
+#print("White defendants: %.2f%%" %            (2103 / 6172 * 100))
+#print("Hispanic defendants: %.2f%%" %         (509  / 6172 * 100))
+#print("Asian defendants: %.2f%%" %            (31   / 6172 * 100))
+#print("Native American defendants: %.2f%%" %  (11   / 6172 * 100))
+```
+
+```{python}
+df['race'].value_counts().apply(lambda x : x / len(df) * 100)
+```
+
+```{python}
+# #%%R
+#summary(df$score_text)
+```
+
+```{python}
+df['score_text'].value_counts()
+```
+
+```{python}
+# #%%R
+#xtabs(~ sex + race, data=df)
+```
+
+```{python}
+pd.crosstab(df['sex'],df['race'])
+```
+
+```{python}
+# #%%R
+#summary(df$sex)
+```
+
+```{python}
+df['sex'].value_counts()
+```
+
+```{python}
+#print("Men: %.2f%%" %   (4997 / 6172 * 100))
+#print("Women: %.2f%%" % (1175 / 6172 * 100))
+```
+
+```{python}
+df['sex'].value_counts().apply(lambda x : x / len(df) * 100)
+```
+
+```{python}
+# #%%R
+#nrow(filter(df, two_year_recid == 1))
+```
+
+```{python}
+len(df[df['two_year_recid'] == 1])
+```
+
+```{python}
+# #%%R
+#nrow(filter(df, two_year_recid == 1)) / nrow(df) * 100
+```
+
+```{python}
+len(df[df['two_year_recid'] == 1]) / len(df) * 100
+```
+
+Judges are often presented with two sets of scores from the Compas system -- one that classifies people into High, Medium and Low risk, and a corresponding decile score. There is a clear downward trend in the decile scores as those scores increase for white defendants.
+
+```{python}
+"""
+%%R -w 900 -h 363 -u px
+library(grid)
+library(gridExtra)
+pblack <- ggplot(data=filter(df, race =="African-American"), aes(ordered(decile_score))) + 
+          geom_bar() + xlab("Decile Score") +
+          ylim(0, 650) + ggtitle("Black Defendant's Decile Scores")
+pwhite <- ggplot(data=filter(df, race =="Caucasian"), aes(ordered(decile_score))) + 
+          geom_bar() + xlab("Decile Score") +
+          ylim(0, 650) + ggtitle("White Defendant's Decile Scores")
+grid.arrange(pblack, pwhite,  ncol = 2)
+""";
+```
+
+```{python}
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12,4), sharey = True)
+ax1.hist(df[df['race'] == 'African-American']['decile_score'],bins=10);
+ax2.hist(df[df['race'] == 'Caucasian']['decile_score'],bins=10);
+```
+
+```{python}
+# #%%R
+#xtabs(~ decile_score + race, data=df)
+```
+
+```{python}
+pd.crosstab(df['decile_score'],df['race'])
+```
+
+## Racial Bias in Compas
+
+After filtering out bad rows, our first question is whether there is a significant difference in Compas scores between races. To do so we need to change some variables into factors, and run a logistic regression, comparing low scores to high scores.
+
+```{python}
+df['c_charge_degree'].value_counts()
+```
+
+```{python}
+"""%%R
+df <- mutate(df, crime_factor = factor(c_charge_degree)) %>%
+      mutate(age_factor = as.factor(age_cat)) %>%
+      within(age_factor <- relevel(age_factor, ref = 1)) %>%
+      mutate(race_factor = factor(race)) %>%
+      within(race_factor <- relevel(race_factor, ref = 3)) %>%
+      mutate(gender_factor = factor(sex, labels= c("Female","Male"))) %>%
+      within(gender_factor <- relevel(gender_factor, ref = 2)) %>%
+      mutate(score_factor = factor(score_text != "Low", labels = c("LowScore","HighScore")))
+model <- glm(score_factor ~ gender_factor + age_factor + race_factor +
+                            priors_count + crime_factor + two_year_recid, family="binomial", data=df)
+summary(model)
+""";
+```
+
+```{python}
+#combining medium and high scores and setting them to HighScore and low scores become LowScore
+df['score_text_low/high'] = df['score_text'].apply(lambda x : 'HighScore' if x != 'Low' else 'LowScore')
+
+#creating dummy variables for our logistic regression
+dummy_df = pd.get_dummies(df[['c_charge_degree','age_cat','race','sex','score_text_low/high']], dtype='int')
+
+#dropping columns which will contain duplicate dummy variables
+dummy_df = dummy_df.drop(['age_cat_25 - 45', 'race_Caucasian','sex_Male','score_text_low/high_LowScore','c_charge_degree_F'], axis=1)
+df = pd.concat([df, dummy_df], axis=1)
+```
+
+```{python}
+#renaming columns so they don't contain /, -, or spaces
+rename_dict = {
+    'score_text_low/high_HighScore': 'score_text_low_high_HighScore',
+    'age_cat_Less than 25': 'age_cat_Less_than_25',
+    'age_cat_Greater than 45': 'age_cat_Greater_than_45',
+    'race_African-American': 'race_African_American',
+    'race_Native American': 'race_Native_American'
+}
+df.rename(columns=rename_dict, inplace=True)
+
+```
+
+```{python}
+import statsmodels.formula.api as smf
+model = smf.logit(formula='score_text_low_high_HighScore ~ sex_Female + age_cat_Less_than_25 + age_cat_Greater_than_45 + race_African_American + race_Asian + race_Hispanic + race_Native_American + race_Other + priors_count + c_charge_degree_M + two_year_recid', data=df).fit()
+print(model.summary())
+```
+
+Black defendants are 45% more likely than white defendants to receive a higher score correcting for the seriousness of their crime, previous arrests, and future criminal behavior.
+
+```{r}
+control <- exp(-1.52554) / (1 + exp(-1.52554))
+exp(0.47721) / (1 - control + (control * exp(0.47721))) #this equals 1.45 (AKA 45% more likely)
+
+#trying to understand this! 
+# odds of a high score assuming everything is controlled / 1 + odds of high assuming controlled 
+# => this is the general probability of a high score assuming everything is controlled
+#odds / probability of false + (probability true * odds)
+# => this somehow calculates an adjusted probability ratio of the increased likelihood of high for black people
+# we don't understand how this results in that?
+
+```
+
+```{python}
+#converting log-odds to odds - we can find the odds of a high score assuming everything is controlled
+log_odds_intercept = model.params[0]
+odds_controlled = np.exp(log_odds_intercept)
+p_controlled = odds_controlled / (1 + odds_controlled)
+print('Probability of a high score assuming baseline factors: ' + str(p_controlled))
+log_odds_african_american = model.params[4]
+odds_african_american = np.exp(log_odds_african_american)
+adjusted_odds_ratio = odds_african_american / (1 - p_controlled + (p_controlled * odds_african_american))
+print('The adjusted odds ratio (the increased likelihood of an African American individual to be given a high score, \nassuming every other factor is controlled is ' + str(adjusted_odds_ratio))
+#still don't 100% understand this
+#the part i do get is that p_controlled represents the probability at baseline (reference level) for every parameter
+
+#the adjusted odds ratio (correct terminology?) represents the increased likelihood of a high score when not at reference level
+#where every other parameter is controlled 
+```
+
+Women are 19.4% more likely than men to get a higher score.
+
+```{r}
+exp(0.22127) / (1 - control + (control * exp(0.22127)))
+```
+
+Most surprisingly, people under 25 are 2.5 times as likely to get a higher score as middle aged defendants.
+
+```{r}
+exp(1.30839) / (1 - control + (control * exp(1.30839)))
+```
+
+### Risk of Violent Recidivism
+
+Compas also offers a score that aims to measure a persons risk of violent recidivism, which has a similar overall accuracy to the Recidivism score. As before, we can use a logistic regression to test for racial bias.
+
+```{r}
+raw_data <- read.csv("./compas-scores-two-years-violent.csv")
+nrow(raw_data)
+```
+
+```{python}
+violent_data = pd.read_csv('CompasAnalysis/compas-scores-two-years-violent.csv')
+```
+
+```{r}
+df <- dplyr::select(raw_data, age, c_charge_degree, race, age_cat, v_score_text, sex, priors_count, 
+                    days_b_screening_arrest, v_decile_score, is_recid, two_year_recid) %>% 
+        filter(days_b_screening_arrest <= 30) %>%
+        filter(days_b_screening_arrest >= -30) %>% 
+        filter(is_recid != -1) %>%
+        filter(c_charge_degree != "O") %>%
+        filter(v_score_text != 'N/A')
+nrow(df)
+```
+
+```{python}
+violent_df = violent_data[['age','c_charge_degree', 'race', 'age_cat', 'v_score_text', 'sex', 'priors_count','days_b_screening_arrest', 'v_decile_score', 'is_recid', 'two_year_recid']]
+violent_df = violent_df[violent_df['days_b_screening_arrest'] <= 30]
+violent_df = violent_df[violent_df['days_b_screening_arrest'] >= -30]
+violent_df = violent_df[violent_df['is_recid'] != -1]
+violent_df = violent_df[violent_df['c_charge_degree'] != '0']
+violent_df = violent_df[violent_df['v_score_text'] != 'N/A']
+assert len(violent_df) == 4020
+```
+
+```{r}
+summary(df$age_cat)
+```
+
+```{python}
+print(violent_df['age_cat'].value_counts())
+```
+
+```{r}
+summary(df$race)
+```
+
+```{python}
+print(violent_df['race'].value_counts())
+```
+
+```{r}
+summary(df$v_score_text)
+```
+
+```{python}
+print(violent_df['v_score_text'].value_counts())
+```
+
+```{r}
+nrow(filter(df, two_year_recid == 1)) / nrow(df) * 100
+```
+
+```{python}
+(violent_df['two_year_recid'] == 1).sum()/len(violent_df) * 100
+```
+
+```{r}
+nrow(filter(df, two_year_recid == 1))
+```
+
+```{python}
+(violent_df['two_year_recid'] == 1).sum()
+```
+
+```{r magic_args="-w 900 -h 363 -u px"}
+library(grid)
+library(gridExtra)
+pblack <- ggplot(data=filter(df, race =="African-American"), aes(ordered(v_decile_score))) + 
+          geom_bar() + xlab("Violent Decile Score") +
+          ylim(0, 700) + ggtitle("Black Defendant's Violent Decile Scores")
+pwhite <- ggplot(data=filter(df, race =="Caucasian"), aes(ordered(v_decile_score))) + 
+          geom_bar() + xlab("Violent Decile Score") +
+          ylim(0, 700) + ggtitle("White Defendant's Violent Decile Scores")
+grid.arrange(pblack, pwhite,  ncol = 2)
+```
+
+```{python}
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12,4))
+ax1.hist(violent_df[violent_df['race'] == 'African-American']['v_decile_score'],bins=10);
+ax2.hist(violent_df[violent_df['race'] == 'Caucasian']['v_decile_score'],bins=10);
+```
+
+```{r}
+df <- mutate(df, crime_factor = factor(c_charge_degree)) %>%
+      mutate(age_factor = as.factor(age_cat)) %>%
+      within(age_factor <- relevel(age_factor, ref = 1)) %>%
+      mutate(race_factor = factor(race,
+                                  labels = c("African-American", 
+                                             "Asian",
+                                             "Caucasian", 
+                                             "Hispanic", 
+                                             "Native American",
+                                             "Other"))) %>%
+      within(race_factor <- relevel(race_factor, ref = 3)) %>%
+      mutate(gender_factor = factor(sex, labels= c("Female","Male"))) %>%
+      within(gender_factor <- relevel(gender_factor, ref = 2)) %>%
+      mutate(score_factor = factor(v_score_text != "Low", labels = c("LowScore","HighScore")))
+model <- glm(score_factor ~ gender_factor + age_factor + race_factor +
+                            priors_count + crime_factor + two_year_recid, family="binomial", data=df)
+summary(model)
+```
+
+```{python}
+#combining medium and high scores and setting them to HighScore and low scores become LowScore
+violent_df['v_score_text_low/high'] = violent_df['v_score_text'].apply(lambda x : 'HighScore' if x != 'Low' else 'LowScore')
+
+#creating dummy variables for our logistic regression
+dummy_df = pd.get_dummies(violent_df[['c_charge_degree','age_cat','race','sex','v_score_text_low/high']], dtype='int')
+
+#dropping columns which will contain duplicate dummy variables
+dummy_df = dummy_df.drop(['age_cat_25 - 45', 'race_Caucasian','sex_Male','v_score_text_low/high_LowScore','c_charge_degree_F'], axis=1)
+violent_df = pd.concat([violent_df, dummy_df], axis=1)
+```
+
+```{python}
+#renaming columns so they don't contain /, -, or spaces
+rename_dict = {
+    'v_score_text_low/high_HighScore': 'v_score_text_low_high_HighScore',
+    'age_cat_Less than 25': 'age_cat_Less_than_25',
+    'age_cat_Greater than 45': 'age_cat_Greater_than_45',
+    'race_African-American': 'race_African_American',
+    'race_Native American': 'race_Native_American'
+}
+violent_df.rename(columns=rename_dict, inplace=True)
+
+```
+
+```{python}
+import statsmodels.formula.api as smf
+model = smf.logit(formula='v_score_text_low_high_HighScore ~ sex_Female + age_cat_Less_than_25 + age_cat_Greater_than_45 + race_African_American + race_Asian + race_Hispanic + race_Native_American + race_Other + priors_count + c_charge_degree_M + two_year_recid', data=violent_df).fit()
+print(model.summary())
+```
+
+The violent score overpredicts recidivism for black defendants by 77.3% compared to white defendants.
+
+```{r}
+control <- exp(-2.24274) / (1 + exp(-2.24274))
+exp(0.65893) / (1 - control + (control * exp(0.65893)))
+```
+
+Defendands under 25 are 7.4 times as likely to get a higher score as middle aged defendants.
+
+```{r}
+exp(3.14591) / (1 - control + (control * exp(3.14591)))
+```
+
+## Predictive Accuracy of COMPAS
+
+In order to test whether Compas scores do an accurate job of deciding whether an offender is Low, Medium or High risk,  we ran a Cox Proportional Hazards model. Northpointe, the company that created COMPAS and markets it to Law Enforcement, also ran a Cox model in their [validation study](http://cjb.sagepub.com/content/36/1/21.abstract).
+
+We used the counting model and removed people when they were incarcerated. Due to errors in the underlying jail data, we need to filter out 32 rows that have an end date more than the start date. Considering that there are 13,334 total rows in the data, such a small amount of errors will not affect the results.
+
+```{r}
+library(survival)
+library(ggfortify)
+
+data <- filter(filter(read.csv("./cox-parsed.csv"), score_text != "N/A"), end > start) %>%
+        mutate(race_factor = factor(race,
+                                  labels = c("African-American", 
+                                             "Asian",
+                                             "Caucasian", 
+                                             "Hispanic", 
+                                             "Native American",
+                                             "Other"))) %>%
+        within(race_factor <- relevel(race_factor, ref = 3)) %>%
+        mutate(score_factor = factor(score_text)) %>%
+        within(score_factor <- relevel(score_factor, ref=2))
+
+grp <- data[!duplicated(data$id),]
+nrow(grp)
+```
+
+```{python}
+cox_df = pd.read_csv('CompasAnalysis/cox-parsed.csv')
+cox_df = cox_df[cox_df['score_text'] != 'N/A']
+cox_df = cox_df[cox_df['end'] > cox_df['start']]
+dummies_df = pd.get_dummies(cox_df[['race','score_text']], dtype='int')
+dummies_df = dummies_df.drop(['race_Caucasian','score_text_Low'], axis=1)
+cox_df = pd.concat([cox_df, dummies_df], axis=1)
+grp = cox_df.drop_duplicates(subset=['id'], keep = 'first')
+grp = grp[~grp['score_text'].isna()]
+len(grp)
+```
+
+```{r}
+summary(grp$score_factor)
+```
+
+```{python}
+grp['score_text'].value_counts()
+```
+
+```{r}
+summary(grp$race_factor)
+```
+
+```{python}
+grp['race'].value_counts()
+```
+
+```{python}
+#this calculates the concordance scores between whether someone recidivised and their decile scores
+#it checks every pair within a random sample or rows and when one person recidivised and the other didn't checks that the recidivist's score is higher
+def concordance_decile_score(df,columns,sample_size):
+    identifier, score = columns
+    true_count = 0
+    false_count = 0
+    concordance_df = df[columns]
+    concordance_df = concordance_df.sample(sample_size)
+    concordance_df = concordance_df.reset_index()
+    index_pairs = list(combinations(concordance_df.index, 2))
+    for pair in index_pairs:
+        index1, index2 = pair
+        row1, row2 = df.iloc[index1], df.iloc[index2]
+        if row1[identifier] > row2[identifier]:
+            if row1[score] > row2[score]:
+                true_count += 1
+            elif row1[score] < row2[score]:
+                false_count += 1
+        elif row1[identifier] < row2[identifier]:
+            if row1[score] < row2[score]:
+                true_count += 1
+            elif row1[score] > row2[score]:
+                false_count += 1
+    concordance = true_count / (true_count + false_count)
+    return concordance * 100
+concordance_decile_score(grp,['is_recid','decile_score'],100)
+            
+
+```
+
+```{python}
+def concordance_text_score(df,columns,sample_size):
+    identifier, score = columns
+    true_count = 0
+    false_count = 0
+    concordance_df = df[columns]
+    concordance_df = concordance_df.sample(sample_size)
+    concordance_df = concordance_df.reset_index()
+    concordance_df[score] = concordance_df[score].replace(['Low','Medium','High'],[0,1,1])
+    index_pairs = list(combinations(concordance_df.index, 2))
+    for pair in index_pairs:
+        index1, index2 = pair
+        row1, row2 = df.iloc[index1], df.iloc[index2]
+        if row1[identifier] > row2[identifier]:
+            if row1[score] > row2[score]:
+                true_count += 1
+            elif row1[score] < row2[score]:
+                false_count += 1
+        elif row1[identifier] < row2[identifier]:
+            if row1[score] < row2[score]:
+                true_count += 1
+            elif row1[score] < row2[score]:
+                false_count += 1
+    concordance = true_count / (true_count + false_count)
+    return concordance * 100
+concordance_text_score(grp,['is_recid','score_text'],100)
+```
+
+```{python}
+concordance_decile_score(grp[grp['race'] == 'Caucasian'],['is_recid','decile_score'],1000)
+#concordance for african american is 68.4
+#concordance for white people is 68.344
+#similar accuracies but for white people the bad accuracy is beneficial and for black people it is negative
+```
+
+```{python}
+concordance_df = grp.sample(sample_size)
+concordance_df = df.reset_index()
+concordance_df = concordance_df[columns]
+index_pairs = list(combinations(concordance_df.index, 2))
+```
+
+```{python}
+def 
+```
+
+```{r}
+f <- Surv(start, end, event, type="counting") ~ score_factor
+model <- coxph(f, data=data)
+summary(model)
+```
+
+People placed in the High category are 3.5 times as likely to recidivate, and the COMPAS system's concordance 63.6%. This is lower than the accuracy quoted in the Northpoint study of 68%.
+
+```{r}
+decile_f <- Surv(start, end, event, type="counting") ~ decile_score
+dmodel <- coxph(decile_f, data=data)
+summary(dmodel)
+```
+
+COMPAS's decile scores are a bit more accurate at 66%.
+
+We can test if the algorithm is behaving differently across races by including a race interaction term in the cox model.
+
+```{r}
+f2 <- Surv(start, end, event, type="counting") ~ race_factor + score_factor + race_factor * score_factor
+model <- coxph(f2, data=data)
+print(summary(model))
+```
+
+The interaction term shows a similar disparity as the logistic regression above.
+
+High risk white defendants are 3.61 more likely than low risk white defendants, while High risk black defendants are 2.99 more likely than low.
+
+```{python}
+import math
+print("Black High Hazard: %.2f" % (math.exp(-0.18976 + 1.28350)))
+print("White High Hazard: %.2f" % (math.exp(1.28350)))
+print("Black Medium Hazard: %.2f" % (math.exp(0.84286-0.17261)))
+print("White Medium Hazard: %.2f" % (math.exp(0.84286)))
+```
+
+```{r magic_args="-w 900 -h 563 -u px"}
+
+fit <- survfit(f, data=data)
+
+plotty <- function(fit, title) {
+  return(autoplot(fit, conf.int=T, censor=F) + ggtitle(title) + ylim(0,1))
+}
+plotty(fit, "Overall")
+```
+
+Black defendants do recidivate at higher rates according to race specific Kaplan Meier plots.
+
+```{r magic_args="-w 900 -h 363 -u px"}
+white <- filter(data, race == "Caucasian")
+white_fit <- survfit(f, data=white)
+
+black <- filter(data, race == "African-American")
+black_fit <- survfit(f, data=black)
+
+grid.arrange(plotty(white_fit, "White defendants"), 
+             plotty(black_fit, "Black defendants"), ncol=2)
+```
+
+```{r}
+summary(fit, times=c(730))
+```
+
+```{r}
+summary(black_fit, times=c(730))
+```
+
+```{r}
+summary(white_fit, times=c(730))
+```
+
+Race specific models have similar concordance values.
+
+```{r}
+summary(coxph(f, data=white))
+```
+
+```{r}
+summary(coxph(f, data=black))
+```
+
+Compas's violent recidivism score has a slightly higher overall concordance score of 65.1%.
+
+```{r}
+violent_data <- filter(filter(read.csv("./cox-violent-parsed.csv"), score_text != "N/A"), end > start) %>%
+        mutate(race_factor = factor(race,
+                                  labels = c("African-American", 
+                                             "Asian",
+                                             "Caucasian", 
+                                             "Hispanic", 
+                                             "Native American",
+                                             "Other"))) %>%
+        within(race_factor <- relevel(race_factor, ref = 3)) %>%
+        mutate(score_factor = factor(score_text)) %>%
+        within(score_factor <- relevel(score_factor, ref=2))
+
+
+vf <- Surv(start, end, event, type="counting") ~ score_factor
+vmodel <- coxph(vf, data=violent_data)
+vgrp <- violent_data[!duplicated(violent_data$id),]
+print(nrow(vgrp))
+summary(vmodel)
+```
+
+In this case, there isn't a significant coefficient on African American's with High Scores.
+
+```{r}
+vf2 <- Surv(start, end, event, type="counting") ~ race_factor + race_factor * score_factor
+vmodel <- coxph(vf2, data=violent_data)
+summary(vmodel)
+```
+
+```{r}
+summary(coxph(vf, data=filter(violent_data, race == "African-American")))
+```
+
+```{r}
+summary(coxph(vf, data=filter(violent_data, race == "Caucasian")))
+```
+
+```{r magic_args="-w 900 -h 363 -u px"}
+white <- filter(violent_data, race == "Caucasian")
+white_fit <- survfit(vf, data=white)
+
+black <- filter(violent_data, race == "African-American")
+black_fit <- survfit(vf, data=black)
+
+grid.arrange(plotty(white_fit, "White defendants"), 
+             plotty(black_fit, "Black defendants"), ncol=2)
+```
+
+## Directions of the Racial Bias
+
+The above analysis shows that the Compas algorithm does overpredict African-American defendant's future recidivism, but we haven't yet explored the direction of the bias. We can discover fine differences in overprediction and underprediction by comparing Compas scores across racial lines.
+
+```{python}
+from truth_tables import PeekyReader, Person, table, is_race, count, vtable, hightable, vhightable
+from csv import DictReader
+
+people = []
+with open("./cox-parsed.csv") as f:
+    reader = PeekyReader(DictReader(f))
+    try:
+        while True:
+            p = Person(reader)
+            if p.valid:
+                people.append(p)
+    except StopIteration:
+        pass
+
+pop = list(filter(lambda i: ((i.recidivist == True and i.lifetime <= 730) or
+                              i.lifetime > 730), list(filter(lambda x: x.score_valid, people))))
+recid = list(filter(lambda i: i.recidivist == True and i.lifetime <= 730, pop))
+rset = set(recid)
+surv = [i for i in pop if i not in rset]
+```
+
+```{python}
+print("All defendants")
+table(list(recid), list(surv))
+```
+
+```{python}
+print("Total pop: %i" % (2681 + 1282 + 1216 + 2035))
+```
+
+```{python}
+import statistics
+print("Average followup time %.2f (sd %.2f)" % (statistics.mean(map(lambda i: i.lifetime, pop)),
+                                                statistics.stdev(map(lambda i: i.lifetime, pop))))
+print("Median followup time %i" % (statistics.median(map(lambda i: i.lifetime, pop))))
+```
+
+Overall, the false positive rate is 32.35%.
+
+```{python}
+print("Black defendants")
+is_afam = is_race("African-American")
+table(list(filter(is_afam, recid)), list(filter(is_afam, surv)))
+```
+
+That number is higher for African Americans at 44.85%.
+
+```{python}
+print("White defendants")
+is_white = is_race("Caucasian")
+table(list(filter(is_white, recid)), list(filter(is_white, surv)))
+```
+
+And lower for whites at 23.45%.
+
+```{python}
+44.85 / 23.45
+```
+
+Which means under COMPAS black defendants are 91% more likely to get a higher score and not go on to commit more crimes than white defendants after two year.
+
+
+COMPAS scores misclassify white reoffenders as low risk at 70.4% more often than black reoffenders.
+
+```{python}
+47.72 / 27.99
+```
+
+```{python}
+hightable(list(filter(is_white, recid)), list(filter(is_white, surv)))
+```
+
+```{python}
+hightable(list(filter(is_afam, recid)), list(filter(is_afam, surv)))
+```
+
+## Risk of Violent Recidivism
+
+Compas also offers a score that aims to measure a persons risk of violent recidivism, which has a similar overall accuracy to the Recidivism score.
+
+```{python}
+vpeople = []
+with open("./cox-violent-parsed.csv") as f:
+    reader = PeekyReader(DictReader(f))
+    try:
+        while True:
+            p = Person(reader)
+            if p.valid:
+                vpeople.append(p)
+    except StopIteration:
+        pass
+
+vpop = list(filter(lambda i: ((i.violent_recidivist == True and i.lifetime <= 730) or
+                              i.lifetime > 730), list(filter(lambda x: x.vscore_valid, vpeople))))
+vrecid = list(filter(lambda i: i.violent_recidivist == True and i.lifetime <= 730, vpeople))
+vrset = set(vrecid)
+vsurv = [i for i in vpop if i not in vrset]
+```
+
+```{python}
+print("All defendants")
+vtable(list(vrecid), list(vsurv))
+```
+
+Even moreso for Black defendants.
+
+```{python}
+print("Black defendants")
+is_afam = is_race("African-American")
+vtable(list(filter(is_afam, vrecid)), list(filter(is_afam, vsurv)))
+```
+
+```{python}
+print("White defendants")
+is_white = is_race("Caucasian")
+vtable(list(filter(is_white, vrecid)), list(filter(is_white, vsurv)))
+```
+
+Black defendants are twice as likely to be false positives for a Higher violent score than white defendants.
+
+```{python}
+38.14 / 18.46
+```
+
+White defendants are 63% more likely to get a lower score and commit another crime than Black defendants.
+
+```{python}
+62.62 / 38.37
+```
+
+## Gender differences in Compas scores
+
+In terms of underlying recidivism rates, we can look at gender specific Kaplan Meier estimates. There is a striking difference between women and men.
+
+```{r}
+
+female <- filter(data, sex == "Female")
+male   <- filter(data, sex == "Male")
+male_fit <- survfit(f, data=male)
+female_fit <- survfit(f, data=female)
+```
+
+```{r}
+summary(male_fit, times=c(730))
+```
+
+```{r}
+summary(female_fit, times=c(730))
+```
+
+```{r magic_args="-w 900 -h 363 -u px"}
+grid.arrange(plotty(female_fit, "Female"), plotty(male_fit, "Male"),ncol=2)
+```
+
+As these plots show, the Compas score treats a High risk women the same as a Medium risk man.
+
+```{python jupyter={'outputs_hidden': True}}
+
+```
