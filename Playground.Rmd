@@ -5,7 +5,7 @@ jupyter:
       extension: .Rmd
       format_name: rmarkdown
       format_version: '1.2'
-      jupytext_version: 1.15.2
+      jupytext_version: 1.16.0
   kernelspec:
     display_name: Python 3 (ipykernel)
     language: python
@@ -48,9 +48,34 @@ display(df['age_cat'].value_counts(),
 ```
 
 ```{python}
+#using groupby to create a table which can be turned into a barchart
+df['Index'] = df.index
+african_american_barchart = df[df['race'] == 'African-American'].groupby(['decile_score'])['Index'].unique().apply(len)
+caucasian_barchart = df[df['race'] == 'Caucasian'].groupby(['decile_score'])['Index'].unique().apply(len)
+df = df.drop(['Index'],axis=1)
+```
+
+```{python}
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12,4))
-ax1.hist(df[df['race'] == 'African-American']['decile_score'],bins=10);
-ax2.hist(df[df['race'] == 'Caucasian']['decile_score'],bins=10);
+
+#format for barchart_setting(axes1,axes2,upper_ylim)
+graph_formats.barchart_setting(ax1,ax2,620)
+
+ax1.bar(african_american_barchart.index,african_american_barchart.values,color='dimgrey',zorder=2)
+ax1.set_title("Black Defendent's Decile Scores")
+ax2.bar(caucasian_barchart.index,caucasian_barchart.values,color='dimgrey',zorder=2)
+ax2.set_title("White Defendent's Decile Scores");
+```
+
+```{python}
+df['Index'] = df.index
+african_american_barchart = df[df['race'] == 'African-American'].groupby(['decile_score'])['Index'].unique().apply(len)
+caucasian_barchart = df[df['race'] == 'Caucasian'].groupby(['decile_score'])['Index'].unique().apply(len)
+```
+
+```{python}
+df['Index'] = df.index
+
 ```
 
 ```{python}
@@ -60,6 +85,40 @@ display(model.summary())
 
 ## DO NOT FORGET TO DO LOG ODDS HERE
 
+```{python}
+intercept = model.params.Intercept
+
+controlled_p = np.exp(model.params.Intercept) / (1 + np.exp(model.params.Intercept))
+black_p = np.exp(model.params.race_African_American) / (1 + np.exp(model.params.race_African_American))
+increased_likelihood = black_p / (black_p + controlled_p)
+increased_likelihood
+```
+
+## Calculating Odds Ratios
+Why did they do this so differently?
+Does it matter - or can we back up what we are saying here?
+
+```{python}
+#converting log-odds to odds
+odds_baselevel = np.exp(model.params.Intercept)
+odds_black = np.exp(model.params.race_African_American)
+
+#calculating an odds ratio
+display(f"Using an odds ratio, black defendants are " + str(odds_black/odds_baselevel * 100)[:3] + "% more likely to receive a high score than white defendants.")
+```
+
+```{python}
+odds_female = np.exp(model.params.sex_Female)
+display(f"Using an odds ratio, female defendants are " + str(odds_female/odds_baselevel * 100)[:3] + " % more likely to receive a high score than male defendants.")
+```
+
+```{python}
+odds_under25 = np.exp(model.params.age_cat_Less_than_25) / (1 + np.exp(model.params.age_cat_Less_than_25))
+odds_over45 = np.exp(model.params.age_cat_Greater_than_45) / (1 + np.exp(model.params.age_cat_Greater_than_45))
+display(f"Using an odds ratio, defendants under 25 are " + str(odds_under25/odds_baselevel * 100)[:3] + "% more likely to receive a high score than defendants between 25 and 45.")
+display(f"Using an odds ratio, defendants over 45 are " + str(odds_over45/odds_baselevel * 100)[:2] + "% more likely to receive a high score than defendants between 25 and 45.")
+
+```
 
 ## 'violent_df' Descriptive Statistics
 
@@ -72,9 +131,25 @@ display(violent_df['age_cat'].value_counts(),
 ```
 
 ```{python}
+violent_df['Index'] = violent_df.index
+v_african_american_barchart = violent_df[violent_df['race'] == 'African-American'].groupby(['v_decile_score'])['Index'].unique().apply(len)
+v_caucasian_barchart = violent_df[violent_df['race'] == 'Caucasian'].groupby(['v_decile_score'])['Index'].unique().apply(len)
+violent_df = violent_df.drop(['Index'],axis=1)
+```
+
+```{python}
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12,4))
-ax1.hist(violent_df[violent_df['race'] == 'African-American']['v_decile_score'],bins=10);
-ax2.hist(violent_df[violent_df['race'] == 'Caucasian']['v_decile_score'],bins=10);
+
+graph_formats.barchart_setting(ax1,ax2,700)
+
+ax1.bar(v_african_american_barchart.index,v_african_american_barchart.values,color='dimgrey',zorder=2)
+ax1.set_title("Black Defendent's Violent Decile Scores")
+ax2.bar(v_caucasian_barchart.index,v_caucasian_barchart.values,color='dimgrey',zorder=2)
+ax2.set_title("White Defendent's Violent Decile Scores");
+```
+
+```{python}
+violent_df.columns
 ```
 
 ```{python}
@@ -92,16 +167,17 @@ display(cox_df['score_text'].value_counts(),
 ## Predictive Accuracy of COMPAS
 
 ```{python}
+from itertools import combinations
 recid_by_size = cox_df.groupby('score_text')['is_recid'].agg(['sum','size'])
 recid_by_size.loc['HighMedium'] = recid_by_size.loc['High'] + recid_by_size.loc['Medium']
 recid_by_size['percent'] = recid_by_size['sum']/recid_by_size['size']
-display(f'HighMedium vs Low: {recid_by_size.loc['HighMedium','percent']/recid_by_size.loc['Low','percent']}',
-    f'High vs Low: {recid_by_size.loc['High','percent']/recid_by_size.loc['Low','percent']}',
-    f'Text concordance: {conc.concordance_text_score(cox_df,['is_recid','score_text'],100)}')
+display(f"HighMedium vs Low: {recid_by_size.loc['HighMedium','percent']/recid_by_size.loc['Low','percent']}",
+    f"High vs Low: {recid_by_size.loc['High','percent']/recid_by_size.loc['Low','percent']}",
+    f"Text concordance: {conc.concordance_text_score(cox_df,['is_recid','score_text'],100)}")
 ```
 
 ```{python}
-display(f'Decile concordance: {conc.concordance_decile_score(cox_df,['is_recid','decile_score'],100)}')
+display(f"Decile concordance: {conc.concordance_decile_score(cox_df,['is_recid','decile_score'],100)}")
 ```
 
 ```{python}
@@ -109,9 +185,11 @@ recid_by_size_black = cox_df[cox_df['race'] == 'African-American'].groupby('scor
 recid_by_size_black['percent'] = recid_by_size_black['sum']/recid_by_size_black['size']
 recid_by_size_white = cox_df[cox_df['race'] == 'Caucasian'].groupby('score_text')['is_recid'].agg(['sum','size'])
 recid_by_size_white['percent'] = recid_by_size_white['sum']/recid_by_size_white['size']
-display(f'High vs Low (African-American): {recid_by_size_black.loc['High','percent']/recid_by_size_black.loc['Low','percent']}',
-        f'High vs Low (Caucasian): {recid_by_size_white.loc['High','percent']/recid_by_size_white.loc['Low','percent']}')
+display(f"High vs Low (African-American): {recid_by_size_black.loc['High','percent']/recid_by_size_black.loc['Low','percent']}",
+        f"High vs Low (Caucasian): {recid_by_size_white.loc['High','percent']/recid_by_size_white.loc['Low','percent']}")
 ```
+
+# Add Recidivism Line Graph for whole pop.
 
 ```{python}
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
@@ -141,10 +219,58 @@ for score, color in zip(['Low', 'Medium', 'High'], ['green', 'orange', 'red']):
 ax2.set_ylim([0, 1])
 ax2.set_ylabel('Proportion Not Recidivised')
 ax2.set_xlabel('Days')
-ax2.legend()
+ax2.legend(loc='lower left')
 ax2.grid()
 ```
 
+# Do White and Black Race Line Graph for violent scores
+
 ```{python}
-display(f'Violent Text concordance: {conc.concordance_text_score(cox_df,['is_recid','score_text'],100)}')
+display(f"Violent Text concordance: {conc.concordance_text_score(cox_df,['is_recid','score_text'],100)}")
+```
+
+# Next Section: Directions of the Racial Bias
+
+```{python}
+#create class called person
+df = pd.read_csv('CompasAnalysis/cox-parsed.csv')
+df.groupby('id')['v_screening_date'].unique().apply(len).max()
+```
+
+```{python}
+from CompasAnalysis import truth_tables
+from csv import DictReader
+
+people = []
+with open("CompasAnalysis/cox-parsed.csv") as f:
+    reader = truth_tables.PeekyReader(DictReader(f))
+    try:
+        while True:
+            p = truth_tables.Person(reader)
+            if p.valid:
+                people.append(p)
+    except StopIteration:
+        pass
+
+pop = list(filter(lambda i: ((i.recidivist == True and i.lifetime <= 730) or
+                              i.lifetime > 730), list(filter(lambda x: x.score_valid, people))))
+recid = list(filter(lambda i: i.recidivist == True and i.lifetime <= 730, pop))
+rset = set(recid)
+surv = [i for i in pop if i not in rset]
+
+
+
+```
+
+```{python}
+print("All defendants")
+truth_tables.table(list(recid), list(surv))
+```
+
+```{python}
+print("Total pop: %i" % (2681 + 1282 + 1216 + 2035))
+```
+
+```{python}
+
 ```

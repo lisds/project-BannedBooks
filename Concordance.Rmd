@@ -1,4 +1,25 @@
-from itertools import combinations
+---
+jupyter:
+  jupytext:
+    text_representation:
+      extension: .Rmd
+      format_name: rmarkdown
+      format_version: '1.2'
+      jupytext_version: 1.16.0
+  kernelspec:
+    display_name: Python 3 (ipykernel)
+    language: python
+    name: python3
+---
+
+```{python}
+# %run -i projtools/imports.py
+# %run -i projtools/data.py
+```
+
+```{python}
+#this calculates the concordance scores between whether someone recidivised and their decile scores
+#it checks every pair within a random sample or rows and when one person recidivised and the other didn't checks that the recidivist's score is higher
 def concordance_decile_score(df,columns,sample_size):
     identifier, score = columns
     true_count = 0
@@ -22,7 +43,10 @@ def concordance_decile_score(df,columns,sample_size):
                 false_count += 1
     concordance = true_count / (true_count + false_count)
     return concordance * 100
+concordance_decile_score(cox_df,['is_recid','decile_score'],100)
+```
 
+```{python}
 def concordance_text_score(df,columns,sample_size):
     identifier, score = columns
     true_count = 0
@@ -47,3 +71,12 @@ def concordance_text_score(df,columns,sample_size):
                 false_count += 1
     concordance = true_count / (true_count + false_count)
     return concordance * 100
+concordance_text_score(cox_df,['is_recid','score_text'],100)
+```
+
+```{python}
+concordance_decile_score(grp[grp['race'] == 'Caucasian'],['is_recid','decile_score'],1000)
+#concordance for african american is 68.4
+#concordance for white people is 68.344
+#similar accuracies but for white people the bad accuracy is beneficial and for black people it is negative
+```
