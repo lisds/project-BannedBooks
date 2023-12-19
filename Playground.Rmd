@@ -221,7 +221,7 @@ ax2.grid()
 display(f"Violent Text concordance: {conc.concordance_text_score(cox_df,['is_recid','score_text'],100)}")
 ```
 
-# Next Section: Directions of the Racial Bias
+# Directions of the Racial Bias
 
 
 Realised what is_recid is vs event - is_recid is whether someone has recidivised while event only increases to one, once per person. This means is_recid can have multiple values for the same person when they have only recidivised once
@@ -233,79 +233,153 @@ df = pd.read_csv('CompasAnalysis/cox-parsed.csv')
 #checking the differences between two rows with the same person
 differences = df.iloc[3].dropna() != df.iloc[4].dropna()
 print(differences[differences].index)
-    
-#this finds the total lifetime per row
+```
+
+```{python}
+#this finds the total lifetime per person
 lifetimes =  df.groupby('id')[['start','end']].sum().apply(lambda x: x['end'] - x['start'], axis=1)
-lifetimes_df = pd.DataFrame({'id': lifetimes.index, 'lifetimes': lifetimes.values})
-lifetimes_df
-```
 
-```{python}
 #removing duplicate ID rows
-filtered_df = df[~df['id'].duplicated(keep='first')]
-filtered_df['lifetimes'] = lifetimes_df['lifetimes']
+df = df[~df['id'].duplicated(keep='first')]
+
+df['lifetime'] = lifetimes.values
+
+#if recidivist filter lifetimes so only contains people under two years - otherwise contain people who did not recidivise for over two years
+df = df[((df['lifetime'] <= 730) & (df['is_recid'] == 1)) | (df['lifetime'] > 730)]
 ```
 
 ```{python}
-df.groupby('id')['event'].unique().apply(len)
+#creating my own confusion matrices
+is_recid = (df['is_recid'] == 1) & (df['lifetime'] <= 730)
+is_not_recid = (df['lifetime'] > 730)
+score_high = (df['score_text'] == 'High') | (df['score_text'] == 'Medium')
+score_low = df['score_text'] == 'Low'
+df['truth_table_recid'] = np.select([is_not_recid, is_recid], ['Survivor','Recidivist'], default=np.nan)
+df['truth_table_score'] = np.select([score_low, score_high], ['Survivor','Recidivist'], default=np.nan)
 ```
 
 ```{python}
-df.columns
-```
-
-```{python}
-from CompasAnalysis import truth_tables
-from csv import DictReader
-
-people = []
-with open("CompasAnalysis/cox-parsed.csv") as f:
-    reader = truth_tables.PeekyReader(DictReader(f))
-    try:
-        while True:
-            p = truth_tables.Person(reader)
-            if p.valid:
-                people.append(p)
-    except StopIteration:
-        pass
-
-pop = list(filter(lambda i: ((i.recidivist == True and i.lifetime <= 730) or
-                              i.lifetime > 730), list(filter(lambda x: x.score_valid, people))))
-recid = list(filter(lambda i: i.recidivist == True and i.lifetime <= 730, pop))
-rset = set(recid)
-surv = [i for i in pop if i not in rset]
-
-
-
-```
-
-```{python}
-print("All defendants")
-truth_tables.table(list(recid), list(surv))
+cm_df = df[['id','race','truth_table_recid','truth_table_score']]
+cm_df = cm_df.dropna(subset=['truth_table_recid','truth_table_score'])
+cm = confusion_matrix(y_true=cm_df['truth_table_recid'],y_pred=cm_df['truth_table_score'],labels=['Survivor','Recidivist'])
+fig = ConfusionMatrixDisplay(cm,display_labels=['Survivor','Recidivist'])
+fig.plot(cmap=plt.cm.Blues)
+plt.text(-0.4,-0.6,'Confusion Matrix - All Defendants', fontdict={'weight': 'bold', 'size': 16});
 ```
 
 ```{python}
 print(f"Total pop: {(2681 + 1282 + 1216 + 2035)}")
+print(f"Overall the false positive rate is {1282/(2681 + 1282)}")
+#there are slightly different survivor figures compared to pro publica
 ```
 
 ```{python}
-print("Average follow-up time %.2f (sd %.2f)" % (statistics.mean(map(lambda i: i.lifetime, pop)),
-                                                statistics.stdev(map(lambda i: i.lifetime, pop))))
-print("Median follow-up time %i" % (statistics.median(map(lambda i: i.lifetime, pop))))
+display(f"The mean time between release and re-entry of custody is {np.mean(df['lifetime'])} days (stdev: {np.std(df['lifetime'])} days.)")
+display(f"The median time between release and re-entry of custody is {np.median(df['lifetime'])} days.")
+#different figures again
 ```
 
 ```{python}
-print("Black defendants")
-is_afam = truth_tables.is_race("African-American")
-truth_tables.table(list(filter(is_afam, recid)), list(filter(is_afam, surv)))
+black_cm_df = cm_df[cm_df['race'] == 'African-American']
+cm = confusion_matrix(y_true=black_cm_df['truth_table_recid'],y_pred=black_cm_df['truth_table_score'],labels=['Survivor','Recidivist'])
+fig = ConfusionMatrixDisplay(cm,display_labels=['Survivor','Recidivist'])
+fig.plot(cmap=plt.cm.Blues)
+plt.text(-0.55,-0.6,'Confusion Matrix - Black Defendants', fontdict={'weight': 'bold', 'size': 16});
 ```
 
 ```{python}
-print("White defendants")
-is_white = truth_tables.is_race("Caucasian")
-truth_tables.table(list(filter(is_white, recid)), list(filter(is_white, surv)))
+print(f"For black defendants, the false positive rate is {805/(990 + 805)}")
 ```
 
 ```{python}
-44.85 / 23.45
+white_cm_df = cm_df[cm_df['race'] == 'Caucasian']
+cm = confusion_matrix(y_true=white_cm_df['truth_table_recid'],y_pred=white_cm_df['truth_table_score'],labels=['Survivor','Recidivist'])
+fig = ConfusionMatrixDisplay(cm,display_labels=['Survivor','Recidivist'])
+fig.plot(cmap=plt.cm.Blues)
+plt.text(-0.55,-0.6,'Confusion Matrix - White Defendants', fontdict={'weight': 'bold', 'size': 16});
+```
+
+```{python}
+print(f"For white defendants, the false positive rate is {349/(349 + 1139)}")
+print(f"Therefore, black defendants are {round(((805/(990 + 805))/(349/(349 + 1139)) - 1) * 100,2)}% more likely to receive a High COMPAS score and not recidivise within 2 years (false \npositive) than white defendants.")
+print(f"Furthermore, white defendants are {round(((461/(461 + 505))/(532/(532 + 1369)) - 1) * 100,2)}% more likely to receive a Low COMPAS score yet still recidivise within 2 years (false \nnegative) than black defendants.")
+```
+
+## Risk of Violent Recidivism
+
+```{python}
+#reading in cox-violent-parsed
+v_df = pd.read_csv('CompasAnalysis/cox-violent-parsed.csv')   
+```
+
+```{python}
+#this finds the total lifetime per person
+lifetimes_df =  pd.DataFrame(v_df.groupby('id')[['start','end']].sum().apply(lambda x: x['end'] - x['start'], axis=1)).rename(columns={0:'lifetime'})
+lifetimes = lifetimes_df['lifetime']
+
+#removing duplicate ID rows
+v_df = v_df[~v_df['id'].duplicated(keep='first')]
+
+v_df['lifetime'] = lifetimes
+
+#if recidivist filter lifetimes so only contains people under two years - otherwise contain people who did not recidivise for over two years
+v_df = v_df[((v_df['lifetime'] <= 730) & (v_df['is_violent_recid'] == 1)) | (v_df['lifetime'] > 730)]
+```
+
+```{python}
+#creating conditions to define the scores someone gets in the confusion matrix
+#in reality recidivised within two years
+is_recid = (v_df['is_violent_recid'] == 1) & (v_df['lifetime'] <= 730)
+#in reality did not recidivise within two years
+is_not_recid = (v_df['lifetime'] > 730)
+#predicted to recidivise
+score_high = (v_df['v_score_text'] == 'High') | (v_df['v_score_text'] == 'Medium')
+#predicted to not recidivise
+score_low = v_df['v_score_text'] == 'Low'
+
+#applying the conditions to create new prediction and true columns with survivor and recidivist values
+v_df['truth_table_recid'] = np.select([is_not_recid, is_recid], ['Survivor','Recidivist'], default=np.nan)
+v_df['truth_table_score'] = np.select([score_low, score_high], ['Survivor','Recidivist'], default=np.nan)
+```
+
+```{python}
+#creating smaller df for our confusion matrices
+v_cm_df = v_df[['id','race','truth_table_recid','truth_table_score']]
+v_cm_df = v_cm_df.dropna(subset=['truth_table_recid','truth_table_score'])
+
+#setting up confusion matrix
+cm = confusion_matrix(y_true=v_cm_df['truth_table_recid'],y_pred=v_cm_df['truth_table_score'],labels=['Survivor','Recidivist'])
+fig = ConfusionMatrixDisplay(cm,display_labels=['Survivor','Recidivist'])
+fig.plot(cmap=plt.cm.Blues)
+plt.text(-0.2,-0.6,'All Defendants - Violent', fontdict={'weight': 'bold', 'size': 16});
+```
+
+```{python}
+print(f"Overall for violent recidivism, the false positive rate is {1088/(1088 + 2350)}")
+```
+
+```{python}
+v_black_cm_df = v_cm_df[v_cm_df['race'] == 'African-American']
+cm = confusion_matrix(y_true=v_black_cm_df['truth_table_recid'],y_pred=v_black_cm_df['truth_table_score'],labels=['Survivor','Recidivist'])
+fig = ConfusionMatrixDisplay(cm,display_labels=['Survivor','Recidivist'])
+fig.plot(cmap=plt.cm.Blues)
+plt.text(-0.25,-0.6,'Black Defendants - Violent', fontdict={'weight': 'bold', 'size': 16});
+```
+
+```{python}
+print(f"For violent recidivism in black defendants, the false positive rate is {743/(743 + 974)}")
+```
+
+```{python}
+v_white_cm_df = v_cm_df[v_cm_df['race'] == 'Caucasian']
+cm = confusion_matrix(y_true=v_white_cm_df['truth_table_recid'],y_pred=v_white_cm_df['truth_table_score'],labels=['Survivor','Recidivist'])
+fig = ConfusionMatrixDisplay(cm,display_labels=['Survivor','Recidivist'])
+fig.plot(cmap=plt.cm.Blues)
+plt.text(-0.2,-0.6,'White Defendants - Violent', fontdict={'weight': 'bold', 'size': 16});
+```
+
+```{python}
+print(f"For violent recidivism in white defendants, the false positive rate is {243/(243 + 963)}")
+print(f"Therefore, black defendants are {round(((743/(743 + 974))/(243/(243 + 963)) - 1) * 100,2)}% more likely to receive a High Violence COMPAS score and not violently recidivise \nwithin 2 years (false positive) than white defendants.")
+print(f"Furthermore, white defendants are {round(((48/(48 + 23))/(53/(53 + 95)) - 1) * 100,2)}% more likely to receive a Low Violence COMPAS score yet still violently recidivise \nwithin 2 years (false negative) than black defendants.")
 ```

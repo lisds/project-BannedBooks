@@ -11,5 +11,7 @@ from itertools import combinations
 from projtools import concordance as conc
 from projtools import graph_formats
 import statistics
+import warnings
+warnings.filterwarnings('ignore')
 
 display('Modules imported succesfully')
