@@ -85,14 +85,6 @@ display(model.summary())
 
 ## DO NOT FORGET TO DO LOG ODDS HERE
 
-```{python}
-intercept = model.params.Intercept
-
-controlled_p = np.exp(model.params.Intercept) / (1 + np.exp(model.params.Intercept))
-black_p = np.exp(model.params.race_African_American) / (1 + np.exp(model.params.race_African_American))
-increased_likelihood = black_p / (black_p + controlled_p)
-increased_likelihood
-```
 
 ## Calculating Odds Ratios
 Why did they do this so differently?
@@ -109,7 +101,7 @@ display(f"Using an odds ratio, black defendants are " + str(odds_black/odds_base
 
 ```{python}
 odds_female = np.exp(model.params.sex_Female)
-display(f"Using an odds ratio, female defendants are " + str(odds_female/odds_baselevel * 100)[:3] + " % more likely to receive a high score than male defendants.")
+display(f"Using an odds ratio, female defendants are " + str(odds_female/odds_baselevel * 100)[:3] + "% more likely to receive a high score than male defendants.")
 ```
 
 ```{python}
@@ -278,10 +270,35 @@ display(f"Violent Text concordance: {conc.concordance_text_score(cox_df_violent,
 
 # Next Section: Directions of the Racial Bias
 
+
+Realised what is_recid is vs event - is_recid is whether someone has recidivised while event only increases to one, once per person. This means is_recid can have multiple values for the same person when they have only recidivised once
+
 ```{python}
 #create class called person
 df = pd.read_csv('CompasAnalysis/cox-parsed.csv')
-df.groupby('id')['v_screening_date'].unique().apply(len).max()
+    
+#checking the differences between two rows with the same person
+differences = df.iloc[3].dropna() != df.iloc[4].dropna()
+print(differences[differences].index)
+    
+#this finds the total lifetime per row
+lifetimes =  df.groupby('id')[['start','end']].sum().apply(lambda x: x['end'] - x['start'], axis=1)
+lifetimes_df = pd.DataFrame({'id': lifetimes.index, 'lifetimes': lifetimes.values})
+lifetimes_df
+```
+
+```{python}
+#removing duplicate ID rows
+filtered_df = df[~df['id'].duplicated(keep='first')]
+filtered_df['lifetimes'] = lifetimes_df['lifetimes']
+```
+
+```{python}
+df.groupby('id')['event'].unique().apply(len)
+```
+
+```{python}
+df.columns
 ```
 
 ```{python}
@@ -315,10 +332,15 @@ truth_tables.table(list(recid), list(surv))
 ```
 
 ```{python}
-print("Total pop: %i" % (2681 + 1282 + 1216 + 2035))
+print(f"Total pop: {(2681 + 1282 + 1216 + 2035)}")
 ```
 
 ```{python}
+print("Average follow-up time %.2f (sd %.2f)" % (statistics.mean(map(lambda i: i.lifetime, pop)),
+                                                statistics.stdev(map(lambda i: i.lifetime, pop))))
+print("Median follow-up time %i" % (statistics.median(map(lambda i: i.lifetime, pop))))
+```
+=======
 df.columns
 ```
 
@@ -357,4 +379,18 @@ ax2.grid()
 
 ```{python}
 
+```{python}
+print("Black defendants")
+is_afam = truth_tables.is_race("African-American")
+truth_tables.table(list(filter(is_afam, recid)), list(filter(is_afam, surv)))
+```
+
+```{python}
+print("White defendants")
+is_white = truth_tables.is_race("Caucasian")
+truth_tables.table(list(filter(is_white, recid)), list(filter(is_white, surv)))
+```
+
+```{python}
+44.85 / 23.45
 ```
