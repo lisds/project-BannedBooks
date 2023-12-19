@@ -5,7 +5,7 @@ jupyter:
       extension: .Rmd
       format_name: rmarkdown
       format_version: '1.2'
-      jupytext_version: 1.16.0
+      jupytext_version: 1.15.2
   kernelspec:
     display_name: Python 3 (ipykernel)
     language: python
@@ -189,10 +189,25 @@ display(f"High vs Low (African-American): {recid_by_size_black.loc['High','perce
         f"High vs Low (Caucasian): {recid_by_size_white.loc['High','percent']/recid_by_size_white.loc['Low','percent']}")
 ```
 
-# Add Recidivism Line Graph for whole pop.
+```{python}
+for score, color in zip(['Low', 'Medium', 'High'], ['green', 'orange', 'red']):
+    subset = cox_df[(cox_df['is_recid'] == 1) & (cox_df['score_text'] == score)]
+    total_count = len(cox_df[cox_df['score_text'] == score])
+    value_counts = subset['duration'].value_counts().sort_index().cumsum()
+    proportion = (total_count - value_counts) / total_count
+    proportion.plot(color=color,
+                    label=score,
+                    title='Entire Sample',
+                    ylim=[0,1],
+                    ylabel='Proportion Not Recidivised',
+                    xlabel='Days',
+                    legend=True,
+                    grid=True)
+```
 
 ```{python}
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
+fig.suptitle('Non-violent recidivism by race', fontsize=16)
 cox_df_black = cox_df[cox_df['race'] == 'African-American']
 cox_df_white = cox_df[cox_df['race'] == 'Caucasian']
 
@@ -223,10 +238,42 @@ ax2.legend(loc='lower left')
 ax2.grid()
 ```
 
-# Do White and Black Race Line Graph for violent scores
+```{python}
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
+fig.suptitle('Violent recidivism by race', fontsize=16)
+cox_df_violent_black = cox_df_violent[cox_df_violent['race'] == 'African-American']
+cox_df_violent_white = cox_df_violent[cox_df_violent['race'] == 'Caucasian']
+cox_df_violent['duration']
+
+for score, color in zip(['Low', 'Medium', 'High'], ['green', 'orange', 'red']):
+    subset = cox_df_violent_white[(cox_df_violent_white['is_recid'] == 1) & (cox_df_violent_white['score_text'] == score)]
+    total_count = len(cox_df_violent_white[cox_df_violent_white['score_text'] == score])
+    value_counts = subset['duration'].value_counts().sort_index().cumsum()
+    proportion = (total_count - value_counts) / total_count
+    proportion.plot(ax=ax1, color=color, label=score, title='White')
+
+ax1.set_ylim([0, 1])
+ax1.set_ylabel('Proportion Not Recidivised')
+ax1.set_xlabel('Days')
+ax1.legend()
+ax1.grid()
+
+for score, color in zip(['Low', 'Medium', 'High'], ['green', 'orange', 'red']):
+    subset = cox_df_violent_black[(cox_df_violent_black['is_recid'] == 1) & (cox_df_violent_black['score_text'] == score)]
+    total_count = len(cox_df_violent_black[cox_df_violent_black['score_text'] == score])
+    value_counts = subset['duration'].value_counts().sort_index().cumsum()
+    proportion = (total_count - value_counts) / total_count
+    proportion.plot(ax=ax2, color=color, label=score, title='Black')
+
+ax2.set_ylim([0, 1])
+ax2.set_ylabel('Proportion Not Recidivised')
+ax2.set_xlabel('Days')
+ax2.legend(loc='lower left')
+ax2.grid()
+```
 
 ```{python}
-display(f"Violent Text concordance: {conc.concordance_text_score(cox_df,['is_recid','score_text'],100)}")
+display(f"Violent Text concordance: {conc.concordance_text_score(cox_df_violent,['is_recid','score_text'],100)}")
 ```
 
 # Next Section: Directions of the Racial Bias
@@ -269,6 +316,43 @@ truth_tables.table(list(recid), list(surv))
 
 ```{python}
 print("Total pop: %i" % (2681 + 1282 + 1216 + 2035))
+```
+
+```{python}
+df.columns
+```
+
+```{python}
+ fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
+fig.suptitle('Violent recidivism by race', fontsize=16)
+df_men = df[df['sex'] == 'Male']
+df_women = df[df['sex'] == 'Female']
+
+for score, color in zip(['Low', 'Medium', 'High'], ['green', 'orange', 'red']):
+    subset = df_women[(df_women['is_recid'] == 1) & (df_women['score_text'] == score)]
+    total_count = len(df_women[df_women['score_text'] == score])
+    value_counts = subset['duration'].value_counts().sort_index().cumsum()
+    proportion = (total_count - value_counts) / total_count
+    proportion.plot(ax=ax1, color=color, label=score, title='Women')
+
+ax1.set_ylim([0, 1])
+ax1.set_ylabel('Proportion Not Recidivised')
+ax1.set_xlabel('Days')
+ax1.legend()
+ax1.grid()
+
+for score, color in zip(['Low', 'Medium', 'High'], ['green', 'orange', 'red']):
+    subset = df_men[(df_men['is_recid'] == 1) & (df_men['score_text'] == score)]
+    total_count = len(df_men[cox_df_violent_black['score_text'] == score])
+    value_counts = subset['duration'].value_counts().sort_index().cumsum()
+    proportion = (total_count - value_counts) / total_count
+    proportion.plot(ax=ax2, color=color, label=score, title='men')
+
+ax2.set_ylim([0, 1])
+ax2.set_ylabel('Proportion Not Recidivised')
+ax2.set_xlabel('Days')
+ax2.legend(loc='lower left')
+ax2.grid()
 ```
 
 ```{python}

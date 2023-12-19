@@ -1,3 +1,4 @@
+import pandas as pd
 raw_data = pd.read_csv('CompasAnalysis/compas-scores-two-years.csv')
 df = raw_data[['age','c_charge_degree', 'race', 'age_cat', 'score_text', 'sex', 'priors_count','days_b_screening_arrest', 'decile_score', 'is_recid', 'two_year_recid', 'c_jail_in', 'c_jail_out']]
 df = df[df['days_b_screening_arrest'] <= 30]
@@ -59,9 +60,17 @@ dummy_cox_df = dummy_cox_df.drop(['race_Caucasian','score_text_Low'], axis=1)
 cox_df = pd.concat([cox_df, dummy_cox_df], axis=1)
 cox_df = cox_df.drop_duplicates(subset=['id'], keep = 'first')
 cox_df = cox_df[~cox_df['score_text'].isna()]
+cox_df = cox_df.drop_duplicates(subset=['name', 'dob'], keep='first')
 cox_df['duration'] = cox_df['end'] - cox_df['start']
 assert len(cox_df) == 10314
 
 #---
 
-display('All tests passed. Your dataframes are: \'df\', \'violent_df\' and \'cox_df\'')
+raw_data_cox_violent = pd.read_csv('CompasAnalysis/cox-violent-parsed.csv')
+cox_df_violent = raw_data_cox_violent[raw_data_cox_violent['score_text'] != 'N/A']
+cox_df_violent = cox_df_violent[~cox_df_violent['score_text'].isna()]
+cox_df_violent = cox_df_violent[cox_df_violent['end'] > cox_df_violent['start']]
+cox_df_violent = cox_df_violent.drop_duplicates(subset=['name', 'dob'], keep='first')
+cox_df_violent['duration'] = cox_df_violent['end'] - cox_df_violent['start']
+
+display('All tests passed. Your dataframes are: \'df\', \'violent_df\', \'cox_df\' and \'cox_df_violent\'')
