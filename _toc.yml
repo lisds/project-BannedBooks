@@ -4,6 +4,10 @@
 format: jb-book
 root: intro
 chapters:
-- file: markdown
-- file: notebooks
-- file: markdown-notebooks
+- file: chapter-one
+- file: chapter-two
+- file: chapter-three
+- file: chapter-four
+- file: chapter-five
+
+- file: Compas Analysis

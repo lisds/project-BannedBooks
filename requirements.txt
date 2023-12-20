@@ -9,5 +9,8 @@ jupytext
 statsmodels
 scikit-learn
 jupyterlab
+statistics
+spacy
+string
 # Install local projtools module.
 -e .
