@@ -229,10 +229,6 @@ Realised what is_recid is vs event - is_recid is whether someone has recidivised
 ```{python}
 #create class called person
 df = pd.read_csv('CompasAnalysis/cox-parsed.csv')
-    
-#checking the differences between two rows with the same person
-differences = df.iloc[3].dropna() != df.iloc[4].dropna()
-print(differences[differences].index)
 ```
 
 ```{python}
@@ -382,4 +378,118 @@ plt.text(-0.2,-0.6,'White Defendants - Violent', fontdict={'weight': 'bold', 'si
 print(f"For violent recidivism in white defendants, the false positive rate is {243/(243 + 963)}")
 print(f"Therefore, black defendants are {round(((743/(743 + 974))/(243/(243 + 963)) - 1) * 100,2)}% more likely to receive a High Violence COMPAS score and not violently recidivise \nwithin 2 years (false positive) than white defendants.")
 print(f"Furthermore, white defendants are {round(((48/(48 + 23))/(53/(53 + 95)) - 1) * 100,2)}% more likely to receive a Low Violence COMPAS score yet still violently recidivise \nwithin 2 years (false negative) than black defendants.")
+```
+
+# Extension
+Ideas:  
+- Investigate the impact of relationship status on COMPAS score and recidivism rates
+- Investigate the impact of juvenile priors and normal priors
+- Use VAD values of c_charge_desc as an input into a regression equation for calculating whether someone recidivises or not
+
+
+# Investigating Prior Charges
+Can these be used to predict how soon a defendant will recidivise, whether they will recidivise and their COMPAS score?
+
+```{python}
+df = pd.read_csv('CompasAnalysis/cox-parsed.csv')
+
+#this finds the total lifetime per person
+lifetimes =  df.groupby('id')[['start','end']].sum().apply(lambda x: x['end'] - x['start'], axis=1)
+
+#removing duplicate ID rows
+df = df[~df['id'].duplicated(keep='first')]
+
+df['lifetime'] = lifetimes.values
+#only taking people who recidivised within the first two years
+df = df[((df['is_recid'] == 1) & (df['lifetime'] <= 730)) | ((df['is_recid'] == 0) & (df['lifetime'] > 730))]
+```
+
+## Using Prior Convictions to Create a Lifetime Model
+Lifetime is the number of between someone's release for their original case and the date they entered jail for their recidivised case.  
+For non-recidivists, it is the time they have been released since their original case.
+
+```{python}
+#using prior convictions to predict someone's lifetime
+prior_lifetime_model = smf.ols(formula='lifetime ~ juv_fel_count + juv_misd_count + juv_other_count + priors_count', data=df).fit()
+prior_lifetime_model.summary()
+```
+
+```{python}
+print(f"From this linear regression, we can understand that individuals without any prior convictions are anticipated to on average have a lifetime of {round(prior_lifetime_model.params.Intercept,2)} days.")
+print(f"\nFor each of these types of prior conviction, defendants tend to recidivise sooner. \nThe figures below show the change for each extra instance: \nJuvenile Felonies: {round(abs(prior_lifetime_model.params.juv_fel_count),2)} days sooner\nJuvenile Other: {round(abs(prior_lifetime_model.params.juv_other_count),2)} days sooner\nPriors: {round(abs(prior_lifetime_model.params.priors_count),2)} days sooner\nJuvenile Misdemeanours are not significant")
+```
+
+## Using Prior Convictions to Create a COMPAS Decile Score Model
+
+```{python}
+#were prior convictions used to calculate decile scores
+prior_decile_model = smf.ols(formula='decile_score ~ juv_fel_count + juv_misd_count + juv_other_count + priors_count', data=df).fit()
+prior_decile_model.summary()
+```
+
+```{python}
+print(f"From this linear regression, we can understand that individuals without any prior convictions are anticipated to on average have a decile score of {round(prior_decile_model.params.Intercept,2)}")
+print(f"\nFor each of these types of prior conviction, defendants tend to have a higher score.\nThe figures below show the change for each extra instance: \nJuvenile Felonies: {round(abs(prior_decile_model.params.juv_fel_count),2)} points higher",
+      f"\nJuvenile Misdemeanours: {round(abs(prior_decile_model.params.juv_misd_count),2)} points higher",
+      f"\nJuvenile Other: {round(abs(prior_decile_model.params.juv_other_count),2)} points higher",
+      f"\nPriors: {round(abs(prior_decile_model.params.priors_count),2)} points higher")
+print("\nThis indicates that all of these data-inputs were likely used as part of the algorithm which constructs COMPAS Decile Scores")
+```
+
+## Using Prior Convictions to Create a Recidivism Model
+
+```{python}
+#do prior convictions actually influence recidivism?
+prior_recid_model = smf.logit(formula='is_recid ~ juv_fel_count + juv_misd_count + juv_other_count + priors_count', data=df).fit()
+prior_recid_model.summary()
+```
+
+### Calculating Odds Ratios
+
+```{python}
+odds_baselevel = np.exp(prior_recid_model.params.Intercept)
+print(f"According to the logistic regression, on average: \nA defendant with one juvenile felony is {round((np.exp(prior_recid_model.params.juv_fel_count)/odds_baselevel - 1)* 100,1)}% more likely to be a recidivist than a defendant with none.",
+     f"\nA defendant with one juvenile misdemeanour is {round((np.exp(prior_recid_model.params.juv_misd_count)/odds_baselevel - 1)* 100,1)}% more likely to be a recidivist than a defendant with none.",
+     f"\nA defendant with one other juvenile prior conviction is {round((np.exp(prior_recid_model.params.juv_other_count)/odds_baselevel - 1)* 100,1)}% more likely to be a recidivist than a defendant with none.",
+     f"\nA defendant with one prior conviction is {round((np.exp(prior_recid_model.params.priors_count)/odds_baselevel - 1)* 100,1)}% more likely to be a recidivist than a defendant with none.",)
+```
+
+### Further Analysis
+
+```{python}
+df['predicted_recid'] = df['juv_fel_count'] * prior_recid_model.params.juv_fel_count + df['juv_misd_count'] * prior_recid_model.params.juv_misd_count + df['juv_other_count'] * prior_recid_model.params.juv_other_count + df['priors_count'] * prior_recid_model.params.priors_count + prior_recid_model.params.Intercept
+plt.hist2d(df['predicted_recid'],df['is_recid'],bins=(20,2),cmap='Blues', norm=LogNorm())
+plt.yticks([0,1])
+plt.xlabel('Logistic Regression Prediction')
+plt.ylabel('Recidivist')
+plt.title('Recidivist Prediction vs Actual', fontdict={'weight':'bold', 'size':16})
+cbar = plt.colorbar()
+```
+
+This plot highlights that the logistic regression equation's predictions are distributed more widely for defendants who are recidivists. We can also infer that the average logistic regression prediction is higher for recidivists than non-recidivists.
+
+```{python}
+print(f"Prediction STDEV for Recidivists: {np.std(df[df['is_recid'] == 1]['predicted_recid'])}",
+      f"\nPrediction STDEV for Non-Recidivists: {np.std(df[df['is_recid'] == 0]['predicted_recid'])}",
+      f"\nPrediction Mean for Recidivists: {np.mean(df[df['is_recid'] == 1]['predicted_recid'])}",
+      f"\nPrediction Mean for Non-Recidivists: {np.mean(df[df['is_recid'] == 0]['predicted_recid'])}",)
+```
+
+# NLP Stuff
+
+```{python}
+vad_df = pd.DataFrame(pd.read_csv("data/NRC-VAD-Lexicon.txt")['aaaaaaah\t0.479\t0.606\t0.291'].str.split('\t'))
+vad_df = vad_df.rename(columns={'aaaaaaah\t0.479\t0.606\t0.291':'Words'})
+
+#splitting up list into multiple columns
+vad_df['V'] = vad_df['Words'].apply(lambda x: x[1])
+vad_df['A'] = vad_df['Words'].apply(lambda x: x[2])
+vad_df['D'] = vad_df['Words'].apply(lambda x: x[3])
+vad_df['Words'] = vad_df['Words'].apply(lambda x: x[0])
+vad_df
+```
+
+```{python}
+#creating a list of formatted charge lemmas
+charges = df['c_charge_desc'].value_counts().index.str.split()
 ```
