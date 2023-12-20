@@ -5,7 +5,7 @@ jupyter:
       extension: .Rmd
       format_name: rmarkdown
       format_version: '1.2'
-      jupytext_version: 1.15.2
+      jupytext_version: 1.16.0
   kernelspec:
     display_name: Python 3 (ipykernel)
     language: python
@@ -79,10 +79,10 @@ prior_recid_model.summary()
 
 ```{python}
 odds_baselevel = np.exp(prior_recid_model.params.Intercept)
-print(f"According to the logistic regression, on average: \nA defendant with one juvenile felony is {round((np.exp(prior_recid_model.params.juv_fel_count)/odds_baselevel - 1)* 100,1)}% more likely to be a recidivist than a defendant with none.",
-     f"\nA defendant with one juvenile misdemeanour is {round((np.exp(prior_recid_model.params.juv_misd_count)/odds_baselevel - 1)* 100,1)}% more likely to be a recidivist than a defendant with none.",
-     f"\nA defendant with one other juvenile prior conviction is {round((np.exp(prior_recid_model.params.juv_other_count)/odds_baselevel - 1)* 100,1)}% more likely to be a recidivist than a defendant with none.",
-     f"\nA defendant with one prior conviction is {round((np.exp(prior_recid_model.params.priors_count)/odds_baselevel - 1)* 100,1)}% more likely to be a recidivist than a defendant with none.",)
+print(f"According to the logistic regression, on average: \nA defendant with one juvenile felony is {round((np.exp(prior_recid_model.params.juv_fel_count + prior_recid_model.params.Intercept)/odds_baselevel - 1)* 100,1)}% more likely to be a recidivist than a defendant with none.",
+     f"\nA defendant with one juvenile misdemeanour is {round((np.exp(prior_recid_model.params.juv_misd_count + prior_recid_model.params.Intercept)/odds_baselevel - 1)* 100,1)}% more likely to be a recidivist than a defendant with none.",
+     f"\nA defendant with one other juvenile prior conviction is {round((np.exp(prior_recid_model.params.juv_other_count + prior_recid_model.params.Intercept)/odds_baselevel - 1)* 100,1)}% more likely to be a recidivist than a defendant with none.",
+     f"\nA defendant with one prior conviction is {round((np.exp(prior_recid_model.params.priors_count + prior_recid_model.params.Intercept)/odds_baselevel - 1)* 100,1)}% more likely to be a recidivist than a defendant with none.",)
 ```
 
 ### Further Analysis
