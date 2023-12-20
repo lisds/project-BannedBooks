@@ -20,37 +20,33 @@ jupyter:
 # Directions of the Racial Bias
 
 ```{python}
-#create class called person
-df = pd.read_csv('CompasAnalysis/cox-parsed.csv')
-```
 
-```{python}
 #this finds the total lifetime per person
-lifetimes =  df.groupby('id')[['start','end']].sum().apply(lambda x: x['end'] - x['start'], axis=1)
+lifetimes =  cox_df.groupby('id')[['start','end']].sum().apply(lambda x: x['end'] - x['start'], axis=1)
 
 #removing duplicate ID rows
-df = df[~df['id'].duplicated(keep='first')]
+cox_df = cox_df[~cox_df['id'].duplicated(keep='first')]
 
-df['lifetime'] = lifetimes.values
+cox_df['lifetime'] = lifetimes.values
 
 #if recidivist filter lifetimes so only contains people under two years - otherwise contain people who did not recidivise for over two years
-df = df[((df['lifetime'] <= 730) & (df['is_recid'] == 1)) | (df['lifetime'] > 730)]
+cox_df = cox_df[((cox_df['lifetime'] <= 730) & (cox_df['is_recid'] == 1)) | (cox_df['lifetime'] > 730)]
 ```
 
 ```{python}
 #creating my own confusion matrices
-is_recid = (df['is_recid'] == 1) & (df['lifetime'] <= 730)
-is_not_recid = (df['lifetime'] > 730)
-score_high = (df['score_text'] == 'High') | (df['score_text'] == 'Medium')
-score_low = df['score_text'] == 'Low'
-df['truth_table_recid'] = np.select([is_not_recid, is_recid], ['Survivor','Recidivist'], default=np.nan)
-df['truth_table_score'] = np.select([score_low, score_high], ['Survivor','Recidivist'], default=np.nan)
+is_recid = (cox_df['is_recid'] == 1) & (cox_df['lifetime'] <= 730)
+is_not_recid = (cox_df['lifetime'] > 730)
+score_high = (cox_df['score_text'] == 'High') | (cox_df['score_text'] == 'Medium')
+score_low = cox_df['score_text'] == 'Low'
+cox_df['truth_table_recid'] = np.select([is_not_recid, is_recid], ['Survivor','Recidivist'], default=np.nan)
+cox_df['truth_table_score'] = np.select([score_low, score_high], ['Survivor','Recidivist'], default=np.nan)
 ```
 
 ```{python}
-cm_df = df[['id','race','truth_table_recid','truth_table_score']]
-cm_df = cm_df.dropna(subset=['truth_table_recid','truth_table_score'])
-cm = confusion_matrix(y_true=cm_df['truth_table_recid'],y_pred=cm_df['truth_table_score'],labels=['Survivor','Recidivist'])
+cm_cox_df = cox_df[['id','race','truth_table_recid','truth_table_score']]
+cm_cox_df = cm_cox_df.dropna(subset=['truth_table_recid','truth_table_score'])
+cm = confusion_matrix(y_true=cm_cox_df['truth_table_recid'],y_pred=cm_cox_df['truth_table_score'],labels=['Survivor','Recidivist'])
 fig = ConfusionMatrixDisplay(cm,display_labels=['Survivor','Recidivist'])
 fig.plot(cmap=plt.cm.Blues)
 plt.text(-0.4,-0.6,'Confusion Matrix - All Defendants', fontdict={'weight': 'bold', 'size': 16});
@@ -63,13 +59,15 @@ print(f"Overall the false positive rate is {1282/(2681 + 1282)}")
 ```
 
 ```{python}
-display(f"The mean time between release and re-entry of custody is {np.mean(df['lifetime'])} days (stdev: {np.std(df['lifetime'])} days.)")
-display(f"The median time between release and re-entry of custody is {np.median(df['lifetime'])} days.")
+
+display(f"The mean time between release and re-entry of custody is {np.mean(cox_df['lifetime'])} days (stdev: {np.std(cox_df['lifetime'])} days.)")
+display(f"The median time between release and re-entry of custody is {np.median(cox_df['lifetime'])} days.")
 #different figures again
 ```
 ```{python}
-black_cm_df = cm_df[cm_df['race'] == 'African-American']
-cm = confusion_matrix(y_true=black_cm_df['truth_table_recid'],y_pred=black_cm_df['truth_table_score'],labels=['Survivor','Recidivist'])
+black_cm_cox_df = cm_cox_df[cm_cox_df['race'] == 'African-American']
+cm = confusion_matrix(y_true=black_cm_cox_df['truth_table_recid'],y_pred=black_cm_cox_df['truth_table_score'],labels=['Survivor','Recidivist'])
+
 fig = ConfusionMatrixDisplay(cm,display_labels=['Survivor','Recidivist'])
 fig.plot(cmap=plt.cm.Blues)
 plt.text(-0.55,-0.6,'Confusion Matrix - Black Defendants', fontdict={'weight': 'bold', 'size': 16});
@@ -80,8 +78,9 @@ print(f"For black defendants, the false positive rate is {805/(990 + 805)}")
 ```
 
 ```{python}
-white_cm_df = cm_df[cm_df['race'] == 'Caucasian']
-cm = confusion_matrix(y_true=white_cm_df['truth_table_recid'],y_pred=white_cm_df['truth_table_score'],labels=['Survivor','Recidivist'])
+white_cm_cox_df = cm_cox_df[cm_cox_df['race'] == 'Caucasian']
+cm = confusion_matrix(y_true=white_cm_cox_df['truth_table_recid'],y_pred=white_cm_cox_df['truth_table_score'],labels=['Survivor','Recidivist'])
+
 fig = ConfusionMatrixDisplay(cm,display_labels=['Survivor','Recidivist'])
 fig.plot(cmap=plt.cm.Blues)
 plt.text(-0.55,-0.6,'Confusion Matrix - White Defendants', fontdict={'weight': 'bold', 'size': 16});

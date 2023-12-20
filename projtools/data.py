@@ -73,7 +73,14 @@ cox_df_violent = cox_df_violent[~cox_df_violent['score_text'].isna()]
 cox_df_violent = cox_df_violent[cox_df_violent['end'] > cox_df_violent['start']]
 cox_df_violent = cox_df_violent.drop_duplicates(subset=['name', 'dob'], keep='first')
 cox_df_violent['duration'] = cox_df_violent['end'] - cox_df_violent['start']
-
+#this finds the total lifetime per person
+lifetimes_df =  pd.DataFrame(cox_df_violent.groupby('id')[['start','end']].sum().apply(lambda x: x['end'] - x['start'], axis=1)).rename(columns={0:'lifetime'})
+lifetimes = lifetimes_df['lifetime']
+#removing duplicate ID rows
+cox_df_violent = cox_df_violent[~cox_df_violent['id'].duplicated(keep='first')]
+cox_df_violent['lifetime'] = lifetimes
+#if recidivist filter lifetimes so only contains people under two years - otherwise contain people who did not recidivise for over two years
+cox_df_violent = cox_df_violent[((cox_df_violent['lifetime'] <= 730) & (cox_df_violent['is_violent_recid'] == 1)) | (cox_df_violent['lifetime'] > 730)]
 
 #NLP data
 vad_df = pd.DataFrame(pd.read_csv("data/NRC-VAD-Lexicon.txt")['aaaaaaah\t0.479\t0.606\t0.291'].str.split('\t'))
@@ -85,10 +92,7 @@ vad_df['Arousal'] = vad_df['Words'].apply(lambda x: x[2])
 vad_df['Dominance'] = vad_df['Words'].apply(lambda x: x[3])
 vad_df['Words'] = vad_df['Words'].apply(lambda x: x[0])
 
-englis_nlp = spacy.load('data/en_core_web_sm/en_core_web_sm-3.7.1')
-
+english_nlp = spacy.load('data/en_core_web_sm/en_core_web_sm-3.7.1')
 
 
 display('All tests passed. Your dataframes are: \'df\', \'violent_df\', \'cox_df\', \'cox_df_violent\', \'nlp\' and \'vad_df\'')
-
-
