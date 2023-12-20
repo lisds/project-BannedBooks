@@ -1,0 +1,141 @@
+---
+jupyter:
+  jupytext:
+    text_representation:
+      extension: .Rmd
+      format_name: rmarkdown
+      format_version: '1.2'
+      jupytext_version: 1.15.2
+  kernelspec:
+    display_name: Python 3 (ipykernel)
+    language: python
+    name: python3
+---
+
+```{python}
+# %run -i projtools/imports.py
+# %run -i projtools/data.py
+```
+
+# Descriptive Statistics
+
+
+## 'df' 
+
+```{python}
+df['length_of_stay'] = (pd.to_numeric(pd.to_datetime(df['c_jail_out'])) - pd.to_numeric(pd.to_datetime(df['c_jail_in'])))
+df[['length_of_stay','decile_score']].corr().iloc[0,1]
+```
+
+```{python}
+display(df['age_cat'].value_counts(),
+    df['race'].value_counts(),
+    df['race'].value_counts().apply(lambda x : x / len(df) * 100),
+    df['score_text'].value_counts(),
+    pd.crosstab(df['sex'],df['race']),
+    df['sex'].value_counts(),
+    df['sex'].value_counts().apply(lambda x : x / len(df) * 100),
+    len(df[df['two_year_recid'] == 1]),
+    len(df[df['two_year_recid'] == 1]) / len(df) * 100,
+    pd.crosstab(df['decile_score'],df['race']))
+```
+
+```{python}
+#using groupby to create a table which can be turned into a barchart
+df['Index'] = df.index
+african_american_barchart = df[df['race'] == 'African-American'].groupby(['decile_score'])['Index'].unique().apply(len)
+caucasian_barchart = df[df['race'] == 'Caucasian'].groupby(['decile_score'])['Index'].unique().apply(len)
+df = df.drop(['Index'],axis=1)
+```
+
+```{python}
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12,4))
+
+#format for barchart_setting(axes1,axes2,upper_ylim)
+graph_formats.barchart_setting(ax1,ax2,620)
+
+ax1.bar(african_american_barchart.index,african_american_barchart.values,color='dimgrey',zorder=2)
+ax1.set_title("Black Defendent's Decile Scores")
+ax2.bar(caucasian_barchart.index,caucasian_barchart.values,color='dimgrey',zorder=2)
+ax2.set_title("White Defendent's Decile Scores");
+```
+
+```{python}
+df['Index'] = df.index
+african_american_barchart = df[df['race'] == 'African-American'].groupby(['decile_score'])['Index'].unique().apply(len)
+caucasian_barchart = df[df['race'] == 'Caucasian'].groupby(['decile_score'])['Index'].unique().apply(len)
+```
+
+```{python}
+df['Index'] = df.index
+
+```
+
+```{python}
+model = smf.logit(formula='score_text_low_high_HighScore ~ sex_Female + age_cat_Less_than_25 + age_cat_Greater_than_45 + race_African_American + race_Asian + race_Hispanic + race_Native_American + race_Other + priors_count + c_charge_degree_M + two_year_recid', data=df).fit()
+display(model.summary())
+```
+
+## Calculating Odds Ratios
+
+```{python}
+#converting log-odds to odds
+odds_baselevel = np.exp(model.params.Intercept)
+odds_black = np.exp(model.params.race_African_American + model.params.Intercept)
+
+#calculating an odds ratio
+display(f"Using an odds ratio, black defendants are {round((odds_black/odds_baselevel -1) * 100,0)}% more likely to receive a high score than white defendants.")
+```
+
+```{python}
+odds_female = np.exp(model.params.sex_Female + model.params.Intercept)
+display(f"Using an odds ratio, female defendants are {round((odds_female/odds_baselevel - 1) * 100,0)}% more likely to receive a high score than male defendants.")
+```
+
+```{python}
+odds_under25 = np.exp(model.params.age_cat_Less_than_25  + model.params.Intercept)
+odds_over45 = np.exp(model.params.age_cat_Greater_than_45  + model.params.Intercept)
+display(f"Using an odds ratio, defendants under 25 are {round((odds_under25/odds_baselevel -1)* 100,0)}% more likely to receive a high score than defendants between 25 and 45.")
+display(f"Using an odds ratio, defendants over 45 are {round((odds_over45/odds_baselevel -1)* 100,0)}% more likely to receive a high score than defendants between 25 and 45.")
+
+```
+
+## 'violent_df'
+
+```{python}
+display(violent_df['age_cat'].value_counts(),
+    violent_df['race'].value_counts(),
+    violent_df['v_score_text'].value_counts(),
+    len(violent_df[violent_df['two_year_recid'] == 1]),
+    len(violent_df[violent_df['two_year_recid'] == 1]) / len(violent_df) * 100)
+```
+
+```{python}
+violent_df['Index'] = violent_df.index
+v_african_american_barchart = violent_df[violent_df['race'] == 'African-American'].groupby(['v_decile_score'])['Index'].unique().apply(len)
+v_caucasian_barchart = violent_df[violent_df['race'] == 'Caucasian'].groupby(['v_decile_score'])['Index'].unique().apply(len)
+violent_df = violent_df.drop(['Index'],axis=1)
+```
+
+```{python}
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12,4))
+
+graph_formats.barchart_setting(ax1,ax2,700)
+
+ax1.bar(v_african_american_barchart.index,v_african_american_barchart.values,color='dimgrey',zorder=2)
+ax1.set_title("Black Defendent's Violent Decile Scores")
+ax2.bar(v_caucasian_barchart.index,v_caucasian_barchart.values,color='dimgrey',zorder=2)
+ax2.set_title("White Defendent's Violent Decile Scores");
+```
+
+```{python}
+model = smf.logit(formula='v_score_text_low_high_HighScore ~ sex_Female + age_cat_Less_than_25 + age_cat_Greater_than_45 + race_African_American + race_Asian + race_Hispanic + race_Native_American + race_Other + priors_count + c_charge_degree_M + two_year_recid', data=violent_df).fit()
+print(model.summary())
+```
+
+## 'cox_df'
+
+```{python}
+display(cox_df['score_text'].value_counts(),
+    cox_df['race'].value_counts())
+```
