@@ -11,6 +11,7 @@ from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 from itertools import combinations
 from projtools import concordance as conc
 from projtools import graph_formats
+from projtools import nlp
 import statistics
 import spacy
 import string

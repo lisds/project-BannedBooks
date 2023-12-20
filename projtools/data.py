@@ -1,4 +1,5 @@
 import pandas as pd
+import spacy
 raw_data = pd.read_csv('CompasAnalysis/compas-scores-two-years.csv')
 df = raw_data[['age','c_charge_degree', 'race', 'age_cat', 'score_text', 'sex', 'priors_count','days_b_screening_arrest', 'decile_score', 'is_recid', 'two_year_recid', 'c_jail_in', 'c_jail_out']]
 df = df[df['days_b_screening_arrest'] <= 30]
@@ -80,4 +81,18 @@ cox_df_violent = cox_df_violent[~cox_df_violent['id'].duplicated(keep='first')]
 cox_df_violent['lifetime'] = lifetimes
 #if recidivist filter lifetimes so only contains people under two years - otherwise contain people who did not recidivise for over two years
 cox_df_violent = cox_df_violent[((cox_df_violent['lifetime'] <= 730) & (cox_df_violent['is_violent_recid'] == 1)) | (cox_df_violent['lifetime'] > 730)]
-display('All tests passed. Your dataframes are: \'df\', \'violent_df\', \'cox_df\' and \'cox_df_violent\'')
+
+#NLP data
+vad_df = pd.DataFrame(pd.read_csv("data/NRC-VAD-Lexicon.txt")['aaaaaaah\t0.479\t0.606\t0.291'].str.split('\t'))
+vad_df = vad_df.rename(columns={'aaaaaaah\t0.479\t0.606\t0.291':'Words'})
+
+#splitting up list into multiple columns
+vad_df['Valence'] = vad_df['Words'].apply(lambda x: x[1])
+vad_df['Arousal'] = vad_df['Words'].apply(lambda x: x[2])
+vad_df['Dominance'] = vad_df['Words'].apply(lambda x: x[3])
+vad_df['Words'] = vad_df['Words'].apply(lambda x: x[0])
+
+english_nlp = spacy.load('data/en_core_web_sm/en_core_web_sm-3.7.1')
+
+
+display('All tests passed. Your dataframes are: \'df\', \'violent_df\', \'cox_df\', \'cox_df_violent\', \'nlp\' and \'vad_df\'')

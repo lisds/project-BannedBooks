@@ -546,7 +546,7 @@ print(f"Prediction STDEV for Recidivists: {np.std(df[df['is_recid'] == 1]['predi
       f"\nPrediction Mean for Non-Recidivists: {np.mean(df[df['is_recid'] == 0]['predicted_recid'])}",)
 ```
 
-# NLP Stuff
+# Extension - Natural Language Processing
 
 ```{python}
 vad_df = pd.DataFrame(pd.read_csv("data/NRC-VAD-Lexicon.txt")['aaaaaaah\t0.479\t0.606\t0.291'].str.split('\t'))

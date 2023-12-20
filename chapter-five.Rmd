@@ -5,11 +5,112 @@ jupyter:
       extension: .Rmd
       format_name: rmarkdown
       format_version: '1.2'
-      jupytext_version: 1.15.2
+      jupytext_version: 1.16.0
   kernelspec:
     display_name: Python 3 (ipykernel)
     language: python
     name: python3
 ---
 
-# Extension
+```{python}
+# %run -i projtools/imports.py
+# %run -i projtools/data.py
+```
+
+# Extension - Investigating Prior Charges
+Were prior charges included in the original COMPAS equation?  
+Here we investigate whether prior charges can be used to predict how soon a defendant will recidivise, whether they will recidivise and their COMPAS score?
+
+```{python}
+#this finds the total lifetime per person
+lifetimes =  cox_df.groupby('id')[['start','end']].sum().apply(lambda x: x['end'] - x['start'], axis=1)
+
+#removing duplicate ID rows
+cox_df = cox_df[~cox_df['id'].duplicated(keep='first')]
+
+cox_df['lifetime'] = lifetimes.values
+
+#only taking people who recidivised within the first two years, and people who didn't recidivise within this two year period
+people_df = cox_df[((cox_df['is_recid'] == 1) & (cox_df['lifetime'] <= 730)) | ((cox_df['is_recid'] == 0) & (cox_df['lifetime'] > 730))]
+```
+
+## Using Prior Convictions to Create a Lifetime Model
+Lifetime is the number of days between someone's release for their original case and the date they entered jail for their recidivised case.  
+For non-recidivists, it is the number of the days they have been released since their original case.  
+Here we use a defendant's prior convictions to predict their lifetime:
+
+```{python}
+#using prior convictions to predict someone's lifetime
+prior_lifetime_model = smf.ols(formula='lifetime ~ juv_fel_count + juv_misd_count + juv_other_count + priors_count', data=people_df).fit()
+prior_lifetime_model.summary()
+```
+
+```{python}
+print(f"From this linear regression, we can understand that individuals without any prior convictions are anticipated to on average have a lifetime of {round(prior_lifetime_model.params.Intercept,2)} days.")
+print(f"\nFor each of these types of prior conviction, defendants tend to recidivise sooner. \nThe figures below show the change for each extra instance: \nJuvenile Felonies: {round(abs(prior_lifetime_model.params.juv_fel_count),2)} days sooner\nJuvenile Other: {round(abs(prior_lifetime_model.params.juv_other_count),2)} days sooner\nPriors: {round(abs(prior_lifetime_model.params.priors_count),2)} days sooner\nJuvenile Misdemeanours are not significant")
+```
+
+## Using Prior Convictions to Create a COMPAS Decile Score Model
+
+```{python}
+#were prior convictions used to calculate decile scores
+prior_decile_model = smf.ols(formula='decile_score ~ juv_fel_count + juv_misd_count + juv_other_count + priors_count', data=people_df).fit()
+prior_decile_model.summary()
+```
+
+```{python}
+print(f"From this linear regression, we can understand that individuals without any prior convictions are anticipated to on average have a decile score of {round(prior_decile_model.params.Intercept,2)}")
+print(f"\nFor each of these types of prior conviction, defendants tend to have a higher score.\nThe figures below show the change for each extra instance: \nJuvenile Felonies: {round(abs(prior_decile_model.params.juv_fel_count),2)} points higher",
+      f"\nJuvenile Misdemeanours: {round(abs(prior_decile_model.params.juv_misd_count),2)} points higher",
+      f"\nJuvenile Other: {round(abs(prior_decile_model.params.juv_other_count),2)} points higher",
+      f"\nPriors: {round(abs(prior_decile_model.params.priors_count),2)} points higher")
+print("\nThis indicates that all of these data-inputs were likely used as part of the algorithm which constructs COMPAS Decile Scores")
+```
+
+## Using Prior Convictions to Create a Recidivism Model
+
+```{python}
+#do prior convictions actually influence recidivism?
+prior_recid_model = smf.logit(formula='is_recid ~ juv_fel_count + juv_misd_count + juv_other_count + priors_count', data=people_df).fit()
+prior_recid_model.summary()
+```
+
+### Calculating Odds Ratios
+
+```{python}
+odds_baselevel = np.exp(prior_recid_model.params.Intercept)
+print(f"According to the logistic regression, on average: \nA defendant with one juvenile felony is {round((np.exp(prior_recid_model.params.juv_fel_count)/odds_baselevel - 1)* 100,1)}% more likely to be a recidivist than a defendant with none.",
+     f"\nA defendant with one juvenile misdemeanour is {round((np.exp(prior_recid_model.params.juv_misd_count)/odds_baselevel - 1)* 100,1)}% more likely to be a recidivist than a defendant with none.",
+     f"\nA defendant with one other juvenile prior conviction is {round((np.exp(prior_recid_model.params.juv_other_count)/odds_baselevel - 1)* 100,1)}% more likely to be a recidivist than a defendant with none.",
+     f"\nA defendant with one prior conviction is {round((np.exp(prior_recid_model.params.priors_count)/odds_baselevel - 1)* 100,1)}% more likely to be a recidivist than a defendant with none.",)
+```
+
+### Further Analysis
+
+
+Here we investigate the distribution of recidivist predictions from this logistic regression for recidivists and non-recidivists.
+
+```{python}
+from matplotlib.lines import Line2D
+people_df['predicted_recid'] = people_df['juv_fel_count'] * prior_recid_model.params.juv_fel_count + people_df['juv_misd_count'] * prior_recid_model.params.juv_misd_count + people_df['juv_other_count'] * prior_recid_model.params.juv_other_count + people_df['priors_count'] * prior_recid_model.params.priors_count + prior_recid_model.params.Intercept
+recid_data = people_df[people_df['is_recid'] == 1]['predicted_recid']
+nonrecid_data = people_df[people_df['is_recid'] == 0]['predicted_recid']
+plt.boxplot([nonrecid_data,recid_data],labels=['Non-Recidivists','Recidivists'], flierprops=dict(marker='x', markeredgecolor='black', markerfacecolor='red', markersize=1), showmeans=True, meanline=True)
+plt.ylabel('Predicted Recidivism Score')
+plt.title('Recidivist Prediction vs Actual', fontdict={'weight':'bold', 'size':16})
+legend_elements = [
+    Line2D([0], [0], marker='s', color='orange', markerfacecolor='orange', markersize=10, label='Median'),
+    Line2D([0], [0], marker='s', color='w', markerfacecolor='green', markersize=10, label='Mean')
+]
+plt.legend(handles=legend_elements, loc='upper left')
+#cbar = plt.colorbar()
+```
+
+```{python}
+print(f"Prediction STDEV for Recidivists: {np.std(people_df[people_df['is_recid'] == 1]['predicted_recid'])}",
+      f"\nPrediction STDEV for Non-Recidivists: {np.std(people_df[people_df['is_recid'] == 0]['predicted_recid'])}",
+      f"\nPrediction Mean for Recidivists: {np.mean(people_df[people_df['is_recid'] == 1]['predicted_recid'])}",
+      f"\nPrediction Mean for Non-Recidivists: {np.mean(people_df[people_df['is_recid'] == 0]['predicted_recid'])}",)
+```
+
+This boxplot shows that both the distribution and the mean of predictions for recidivists is greater than the predictions for non-recidivists. This makes sense intuitively as we are training against 'is_recid', therefore the mean will definitely be larger and as we are moving away from a minimum value (-0.5086) in a positive direction, the distribution would also be wider.
