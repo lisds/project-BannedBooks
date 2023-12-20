@@ -72,5 +72,12 @@ cox_df_violent = cox_df_violent[~cox_df_violent['score_text'].isna()]
 cox_df_violent = cox_df_violent[cox_df_violent['end'] > cox_df_violent['start']]
 cox_df_violent = cox_df_violent.drop_duplicates(subset=['name', 'dob'], keep='first')
 cox_df_violent['duration'] = cox_df_violent['end'] - cox_df_violent['start']
-
+#this finds the total lifetime per person
+lifetimes_df =  pd.DataFrame(cox_df_violent.groupby('id')[['start','end']].sum().apply(lambda x: x['end'] - x['start'], axis=1)).rename(columns={0:'lifetime'})
+lifetimes = lifetimes_df['lifetime']
+#removing duplicate ID rows
+cox_df_violent = cox_df_violent[~cox_df_violent['id'].duplicated(keep='first')]
+cox_df_violent['lifetime'] = lifetimes
+#if recidivist filter lifetimes so only contains people under two years - otherwise contain people who did not recidivise for over two years
+cox_df_violent = cox_df_violent[((cox_df_violent['lifetime'] <= 730) & (cox_df_violent['is_violent_recid'] == 1)) | (cox_df_violent['lifetime'] > 730)]
 display('All tests passed. Your dataframes are: \'df\', \'violent_df\', \'cox_df\' and \'cox_df_violent\'')

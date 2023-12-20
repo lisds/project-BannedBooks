@@ -13,7 +13,3 @@ jupyter:
 ---
 
 # Extension
-
-```{python}
-
-```

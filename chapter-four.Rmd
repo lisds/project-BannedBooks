@@ -20,43 +20,25 @@ jupyter:
 # Risk of Violent Recidivism
 
 ```{python}
-#reading in cox-violent-parsed
-v_df = pd.read_csv('CompasAnalysis/cox-violent-parsed.csv')   
-```
-
-```{python}
-#this finds the total lifetime per person
-lifetimes_df =  pd.DataFrame(v_df.groupby('id')[['start','end']].sum().apply(lambda x: x['end'] - x['start'], axis=1)).rename(columns={0:'lifetime'})
-lifetimes = lifetimes_df['lifetime']
-
-#removing duplicate ID rows
-v_df = v_df[~v_df['id'].duplicated(keep='first')]
-
-v_df['lifetime'] = lifetimes
-
-#if recidivist filter lifetimes so only contains people under two years - otherwise contain people who did not recidivise for over two years
-v_df = v_df[((v_df['lifetime'] <= 730) & (v_df['is_violent_recid'] == 1)) | (v_df['lifetime'] > 730)]
-```
-
-```{python}
 #creating conditions to define the scores someone gets in the confusion matrix
 #in reality recidivised within two years
-is_recid = (v_df['is_violent_recid'] == 1) & (v_df['lifetime'] <= 730)
+is_recid = (cox_df_violent['is_violent_recid'] == 1) & (cox_df_violent['lifetime'] <= 730)
 #in reality did not recidivise within two years
-is_not_recid = (v_df['lifetime'] > 730)
+is_not_recid = (cox_df_violent['lifetime'] > 730)
 #predicted to recidivise
-score_high = (v_df['v_score_text'] == 'High') | (v_df['v_score_text'] == 'Medium')
+score_high = (cox_df_violent['v_score_text'] == 'High') | (cox_df_violent['v_score_text'] == 'Medium')
 #predicted to not recidivise
-score_low = v_df['v_score_text'] == 'Low'
+score_low = cox_df_violent['v_score_text'] == 'Low'
 
 #applying the conditions to create new prediction and true columns with survivor and recidivist values
-v_df['truth_table_recid'] = np.select([is_not_recid, is_recid], ['Survivor','Recidivist'], default=np.nan)
-v_df['truth_table_score'] = np.select([score_low, score_high], ['Survivor','Recidivist'], default=np.nan)
+cox_df_violent['truth_table_recid'] = np.select([is_not_recid, is_recid], ['Survivor','Recidivist'], default=np.nan)
+cox_df_violent['truth_table_score'] = np.select([score_low, score_high], ['Survivor','Recidivist'], default=np.nan)
+score'] = np.select([score_low, score_high], ['Survivor','Recidivist'], default=np.nan)
 ```
 
 ```{python}
 #creating smaller df for our confusion matrices
-v_cm_df = v_df[['id','race','truth_table_recid','truth_table_score']]
+v_cm_df = cox_df_violent[['id','race','truth_table_recid','truth_table_score']]
 v_cm_df = v_cm_df.dropna(subset=['truth_table_recid','truth_table_score'])
 
 #setting up confusion matrix

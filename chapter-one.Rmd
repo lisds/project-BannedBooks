@@ -81,22 +81,22 @@ display(model.summary())
 ```{python}
 #converting log-odds to odds
 odds_baselevel = np.exp(model.params.Intercept)
-odds_black = np.exp(model.params.race_African_American)
+odds_black = np.exp(model.params.race_African_American + model.params.Intercept)
 
 #calculating an odds ratio
-display(f"Using an odds ratio, black defendants are " + str(odds_black/odds_baselevel * 100)[:3] + "% more likely to receive a high score than white defendants.")
+display(f"Using an odds ratio, black defendants are {round((odds_black/odds_baselevel -1) * 100,0)}% more likely to receive a high score than white defendants.")
 ```
 
 ```{python}
-odds_female = np.exp(model.params.sex_Female)
-display(f"Using an odds ratio, female defendants are " + str(odds_female/odds_baselevel * 100)[:3] + "% more likely to receive a high score than male defendants.")
+odds_female = np.exp(model.params.sex_Female + model.params.Intercept)
+display(f"Using an odds ratio, female defendants are {round((odds_female/odds_baselevel - 1) * 100,0)}% more likely to receive a high score than male defendants.")
 ```
 
 ```{python}
-odds_under25 = np.exp(model.params.age_cat_Less_than_25) / (1 + np.exp(model.params.age_cat_Less_than_25))
-odds_over45 = np.exp(model.params.age_cat_Greater_than_45) / (1 + np.exp(model.params.age_cat_Greater_than_45))
-display(f"Using an odds ratio, defendants under 25 are " + str(odds_under25/odds_baselevel * 100)[:3] + "% more likely to receive a high score than defendants between 25 and 45.")
-display(f"Using an odds ratio, defendants over 45 are " + str(odds_over45/odds_baselevel * 100)[:2] + "% more likely to receive a high score than defendants between 25 and 45.")
+odds_under25 = np.exp(model.params.age_cat_Less_than_25  + model.params.Intercept)
+odds_over45 = np.exp(model.params.age_cat_Greater_than_45  + model.params.Intercept)
+display(f"Using an odds ratio, defendants under 25 are {round((odds_under25/odds_baselevel -1)* 100,0)}% more likely to receive a high score than defendants between 25 and 45.")
+display(f"Using an odds ratio, defendants over 45 are {round((odds_over45/odds_baselevel -1)* 100,0)}% more likely to receive a high score than defendants between 25 and 45.")
 
 ```
 
