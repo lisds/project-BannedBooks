@@ -12,6 +12,8 @@ from itertools import combinations
 from projtools import concordance as conc
 from projtools import graph_formats
 import statistics
+import spacy
+import string
 import warnings
 warnings.filterwarnings('ignore')
 

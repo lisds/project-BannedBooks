@@ -466,7 +466,23 @@ plt.title('Recidivist Prediction vs Actual', fontdict={'weight':'bold', 'size':1
 cbar = plt.colorbar()
 ```
 
-This plot highlights that the logistic regression equation's predictions are distributed more widely for defendants who are recidivists. We can also infer that the average logistic regression prediction is higher for recidivists than non-recidivists.
+```{python}
+from matplotlib.lines import Line2D
+df['predicted_recid'] = df['juv_fel_count'] * prior_recid_model.params.juv_fel_count + df['juv_misd_count'] * prior_recid_model.params.juv_misd_count + df['juv_other_count'] * prior_recid_model.params.juv_other_count + df['priors_count'] * prior_recid_model.params.priors_count + prior_recid_model.params.Intercept
+recid_data = df[df['is_recid'] == 1]['predicted_recid']
+nonrecid_data = df[df['is_recid'] == 0]['predicted_recid']
+#plt.hist2d(df['predicted_recid'],df['is_recid'],bins=(20,2),cmap='Blues', norm=LogNorm())
+plt.boxplot([nonrecid_data,recid_data],labels=['Non-Recidivists','Recidivists'], flierprops=dict(marker='x', markeredgecolor='black', markerfacecolor='red', markersize=1), showmeans=True, meanline=True)
+plt.xlabel('')
+plt.ylabel('Predicted Recidivism Score')
+plt.title('Recidivist Prediction vs Actual', fontdict={'weight':'bold', 'size':16})
+legend_elements = [
+    Line2D([0], [0], marker='s', color='orange', markerfacecolor='orange', markersize=10, label='Median'),
+    Line2D([0], [0], marker='s', color='w', markerfacecolor='green', markersize=10, label='Mean')
+]
+plt.legend(handles=legend_elements, loc='upper left')
+#cbar = plt.colorbar()
+```
 
 ```{python}
 print(f"Prediction STDEV for Recidivists: {np.std(df[df['is_recid'] == 1]['predicted_recid'])}",
@@ -482,14 +498,101 @@ vad_df = pd.DataFrame(pd.read_csv("data/NRC-VAD-Lexicon.txt")['aaaaaaah\t0.479\t
 vad_df = vad_df.rename(columns={'aaaaaaah\t0.479\t0.606\t0.291':'Words'})
 
 #splitting up list into multiple columns
-vad_df['V'] = vad_df['Words'].apply(lambda x: x[1])
-vad_df['A'] = vad_df['Words'].apply(lambda x: x[2])
-vad_df['D'] = vad_df['Words'].apply(lambda x: x[3])
+vad_df['Valence'] = vad_df['Words'].apply(lambda x: x[1])
+vad_df['Arousal'] = vad_df['Words'].apply(lambda x: x[2])
+vad_df['Dominance'] = vad_df['Words'].apply(lambda x: x[3])
 vad_df['Words'] = vad_df['Words'].apply(lambda x: x[0])
-vad_df
+```
+
+```{python}
+#converting the dataframe to dictionaries
+valence_dict = vad_df.set_index('Words')['Valence'].astype('float').to_dict()
+arousal_dict = vad_df.set_index('Words')['Arousal'].astype('float').to_dict()
+dominance_dict = vad_df.set_index('Words')['Dominance'].astype('float').to_dict()
 ```
 
 ```{python}
 #creating a list of formatted charge lemmas
-charges = df['c_charge_desc'].value_counts().index.str.split()
+nlp = spacy.load('data/en_core_web_sm/en_core_web_sm-3.7.1')
+def remove_punctuation(x):
+    punctuation_trans = str.maketrans("", "", string.punctuation.join('/w'))
+    # Use translate method to remove punctuation
+    final_string = x.translate(punctuation_trans)
+    return final_string
+def lemmatizer(x):
+    processed = nlp(x)
+    lemmatized_string = ' '.join([token.lemma_ for token in processed])
+    return lemmatized_string
+df['c_charge_desc'] = df['c_charge_desc'].astype('str').apply(remove_punctuation)
+df['lemmatized_charges'] = df['c_charge_desc'].astype('str').apply(lemmatizer)
+```
+
+```{python}
+charges_df = pd.DataFrame()
+charges_df['Charges'] = df['lemmatized_charges'].value_counts().index.str.split()
+```
+
+```{python}
+charges_df = pd.DataFrame()
+charges_df['Charges'] = df['lemmatized_charges'].value_counts().index.str.split()
+```
+
+```{python}
+charges_df['Charges']
+```
+
+```{python}
+def valence_average(x):
+    scores = []
+    for i in range(len(x)):
+        #takes the uncapitalised version and retrieves its value from the dictionary
+        scores.append(valence_dict.get(x[i].lower(), np.nan))
+    #removing NaNs so that the length corresponds to the number of values
+    scores = [score for score in scores if not math.isnan(score)]
+    if len(scores) == 0:
+        return np.nan
+    return sum(scores)/len(scores)
+def arousal_average(x):
+    scores = []
+    for i in range(len(x)):
+        #takes the uncapitalised version and retrieves its value from the dictionary
+        scores.append(arousal_dict.get(x[i].lower(), np.nan))
+    #removing NaNs so that the length corresponds to the number of values
+    scores = [score for score in scores if not math.isnan(score)]
+    if len(scores) == 0:
+        return np.nan
+    return sum(scores)/len(scores)
+def dominance_average(x):
+    scores = []
+    for i in range(len(x)):
+        #takes the uncapitalised version and retrieves its value from the dictionary
+        scores.append(dominance_dict.get(x[i].lower(), np.nan))
+    #removing NaNs so that the length corresponds to the number of values
+    scores = [score for score in scores if not math.isnan(score)]
+    if len(scores) == 0:
+        return np.nan
+    return sum(scores)/len(scores)
+charges_df['Valence'] = charges_df['Charges'].apply(valence_average)
+charges_df['Arousal'] = charges_df['Charges'].apply(arousal_average)
+charges_df['Dominance'] = charges_df['Charges'].apply(dominance_average)
+
+
+
+    
+        
+        
+```
+
+```{python}
+def combine_and_lower(x):
+    return (' ').join([string.lower() for string in x])    
+charges_df['Charges'].apply(combine_and_lower)
+```
+
+```{python}
+
+```
+
+```{python}
+
 ```
