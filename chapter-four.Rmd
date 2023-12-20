@@ -33,7 +33,7 @@ score_low = cox_df_violent['v_score_text'] == 'Low'
 #applying the conditions to create new prediction and true columns with survivor and recidivist values
 cox_df_violent['truth_table_recid'] = np.select([is_not_recid, is_recid], ['Survivor','Recidivist'], default=np.nan)
 cox_df_violent['truth_table_score'] = np.select([score_low, score_high], ['Survivor','Recidivist'], default=np.nan)
-score'] = np.select([score_low, score_high], ['Survivor','Recidivist'], default=np.nan)
+cox_df_violent['score'] = np.select([score_low, score_high], ['Survivor','Recidivist'], default=np.nan)
 ```
 
 ```{python}
