@@ -1,5 +1,5 @@
 # How We Recreated the Analysis of the COMPAS Recidivism Algorithm
-The following book consists of Jasper and Alex's reproduction and extension of the ProPublica report [Machine Bias](https://www.propublica.org/article/machine-bias-risk-assessments-in-criminal-sentencing). If you would like to see what exactly we are repoducing, we reccomend opening the page Original Analysis alongside each chapter of reproduced analysis.
+The following book consists of Jasper and Alex's reproduction and extension of the ProPublica report [Machine Bias](https://www.propublica.org/article/machine-bias-risk-assessments-in-criminal-sentencing). If you would like to see what exactly we are repoducing, we reccomend opening the page Original Analysis alongside each chapter of reproduced analysis. Where the original authors used CoxPH models we opted for more simple analysis, in order to keep more closley to in line with course content. We believe that we have managed to roughly recreate all of the significant findings, despite this change in methodology.
 
 The orginal report stated:
 
