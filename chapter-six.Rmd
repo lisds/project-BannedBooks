@@ -1,0 +1,144 @@
+---
+jupyter:
+  jupytext:
+    text_representation:
+      extension: .Rmd
+      format_name: rmarkdown
+      format_version: '1.2'
+      jupytext_version: 1.16.0
+  kernelspec:
+    display_name: Python 3 (ipykernel)
+    language: python
+    name: python3
+---
+
+```{python}
+# %run -i projtools/imports.py
+# %run -i projtools/data.py
+```
+
+# Extension - Natural Language Processing
+Here we use NLP to investigate whether the severity of a defendant's previous charge impacts upon their COMPAS score.  
+We begin by assuming that the emotional content of a defendant's charge may act as a proxy for the charge's severity.
+
+```{python}
+vad_df.head()
+```
+
+```{python}
+#converting the dataframe to dictionaries
+valence_dict = vad_df.set_index('Words')['Valence'].astype('float').to_dict()
+arousal_dict = vad_df.set_index('Words')['Arousal'].astype('float').to_dict()
+dominance_dict = vad_df.set_index('Words')['Dominance'].astype('float').to_dict()
+```
+
+```{python}
+#creating a list of formatted charge lemmas using functions written inside of nlp.py
+cox_df['c_charge_desc'] = cox_df['c_charge_desc'].astype('str').apply(nlp.remove_punctuation)
+cox_df['lemmatized_charges'] = cox_df['c_charge_desc'].astype('str').apply(nlp.lemmatizer)
+```
+
+```{python}
+charges_df = pd.DataFrame()
+charges_df['Charges'] = cox_df['lemmatized_charges'].value_counts().index.str.split()
+```
+
+```{python}
+charges_df.head()
+```
+
+```{python}
+charges_df['Valence'] = charges_df['Charges'].apply(nlp.valence_average)
+charges_df['Arousal'] = charges_df['Charges'].apply(nlp.arousal_average)
+charges_df['Dominance'] = charges_df['Charges'].apply(nlp.dominance_average)
+```
+
+```{python}
+charges_df['Combined Charge'] = charges_df['Charges'].apply(nlp.combine_and_lower)
+```
+
+```{python}
+#creating mean decile score and is_recid proportion dictionaries
+#these label each of the different charges with a mean decile score and recidivist proportion for that charge
+charges_mean_decile_score = cox_df.groupby('lemmatized_charges')['decile_score'].mean()
+charges_mean_decile_score = pd.DataFrame({'Charge':charges_mean_decile_score.index,'Mean Decile Score':charges_mean_decile_score.values})
+charges_mean_decile_score['Charge'] = charges_mean_decile_score['Charge'].str.lower()
+charges_mean_decile_score_dict = charges_mean_decile_score.set_index('Charge')['Mean Decile Score'].to_dict()
+
+charges_is_recid_prop = cox_df.groupby('lemmatized_charges')['is_recid'].mean()
+charges_is_recid_prop = pd.DataFrame({'Charge':charges_is_recid_prop.index,'Recidivist Proportion':charges_is_recid_prop.values})
+charges_is_recid_prop['Charge'] = charges_mean_decile_score['Charge'].str.lower()
+charges_is_recid_prop_dict = charges_is_recid_prop.set_index('Charge')['Recidivist Proportion'].to_dict()
+```
+
+```{python}
+charges_df['Mean_Decile_Score'] = charges_df['Combined Charge'].apply(mean_decile_score_finder)
+charges_df['Recidivist_Proportion'] = charges_df['Combined Charge'].apply(recid_proportion_finder)
+```
+
+```{python}
+#removing NaN values where none of the lemmas in the charge had VAD values
+charges_df = charges_df.dropna(subset=['Mean_Decile_Score','Valence'])
+charges_df.head()
+```
+
+Creating a linear regression model which trains decile_score against VAD values
+
+```{python}
+nlp_decile_model = smf.ols(formula='Mean_Decile_Score ~ Valence + Arousal + Dominance', data=charges_df).fit()
+nlp_decile_model.summary()
+```
+
+#### NLP Decile Model Conclusions
+From this regression equation, we can see that the valence, arousal or dominance of the words contained in a charge are not significant in determining someone's COMPAS score. This means that these figures were not used in determining the COMPAS scores, however, this could have been assumed.  
+This means that either the severity of the previous charge does not impact a defendant's COMPAS scores, or more likely these valence, arousal and dominance values are not accurate indicators of the severity of a charge.  
+  
+This could be because of:
+- Some words not being measured because of spelling errors or other formatting errors. Leading to the charge's scores not being accurate of the whole charge
+- The description of these charges not having enough detail to represent the crime commited
+- Words having dual meanings leading to erroneous VAD values (i.e. battery)
+
+
+```{python}
+nlp_recidivism_model = smf.ols(formula='Recidivist_Proportion ~ Valence + Arousal + Dominance', data=charges_df).fit()
+nlp_recidivism_model.summary()
+```
+
+#### NLP Recidivism Model Conclusions
+From this model, we can see that the valence, arousal and dominance of the words contained in a charge are not significant in determining whether someone will recidivise or not.  
+This is likely for similar reasons as mentioned above.
+
+
+### Using Maximum Sentence as a Proxy for Previous Crime Severity
+Instead, we will try to use the maximum sentence for a charge as a proxy for the charge's severity.  
+Maximum sentences were sourced from https://www.goldmanwetzel.com/
+
+```{python}
+#creating dictionary which maps charge types onto their maximum sentences
+charge_sentences_dict = {'(F3)':5,'(M1)':1, '(M2)': 0.16, '(F2)': 15, '(F1)': 30}
+```
+
+```{python}
+#creating new column with the maximum sentence for their previous charge
+cox_df['c_maximum_sentence'] = cox_df['c_charge_degree'].apply(lambda x: charge_sentences_dict.get(x,np.nan))
+
+#training linear regression model
+max_sentence_compas_model = smf.ols(formula='decile_score ~ c_maximum_sentence', data=df).fit()
+max_sentence_compas_model.summary()
+```
+
+For this linear regression model, the maximum sentence associated with their previous charge has a highly significant impact on increasing their decile score.  
+This indicates that the severity of a defendant's charge, which is being represented here by the charge's maximum sentence, does in fact impact their COMPAS decile score.  
+ 
+To check for multicollinearity (a high correlation between the maximum sentence of their charge and other factors which determine COMPAS score), we can create a linear regression model which considers other factors to determine whether c_maximum_sentence adds to the data.
+
+```{python}
+decile_model_max_sentence = smf.ols(formula='decile_score ~ c_maximum_sentence + priors_count + juv_fel_count  + juv_misd_count + juv_other_count', data=cox_df).fit()
+decile_model_max_sentence.summary()
+```
+
+Although, there is some multicollinearity between c_maximum_sentence and the other priors, c_maximum_sentence still contributes towards the decile_score prediction. Therefore, some measure of there last conviction's severity is likely included in the original COMPAS regression equation.
+
+```{python}
+
+```
