@@ -127,10 +127,6 @@ ax2.set_title("White Defendent's Violent Decile Scores");
 ```
 
 ```{python}
-violent_df.columns
-```
-
-```{python}
 model = smf.logit(formula='v_score_text_low_high_HighScore ~ sex_Female + age_cat_Less_than_25 + age_cat_Greater_than_45 + race_African_American + race_Asian + race_Hispanic + race_Native_American + race_Other + priors_count + c_charge_degree_M + two_year_recid', data=violent_df).fit()
 print(model.summary())
 ```
@@ -638,12 +634,6 @@ def dominance_average(x):
 charges_df['Valence'] = charges_df['Charges'].apply(valence_average)
 charges_df['Arousal'] = charges_df['Charges'].apply(arousal_average)
 charges_df['Dominance'] = charges_df['Charges'].apply(dominance_average)
-
-
-
-    
-        
-        
 ```
 
 ```{python}
