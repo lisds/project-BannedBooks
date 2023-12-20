@@ -12,7 +12,7 @@ jupyter:
     name: python3
 ---
 
-# Compas Analysis
+# Original Analysis
 
 What follows are the calculations performed for ProPublica's analaysis of the COMPAS Recidivism Risk Scores. It might be helpful to open [the methodology](https://www.propublica.org/article/how-we-analyzed-the-compas-recidivism-algorithm/) in another tab to understand the following.
 
