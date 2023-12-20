@@ -5,7 +5,7 @@ jupyter:
       extension: .Rmd
       format_name: rmarkdown
       format_version: '1.2'
-      jupytext_version: 1.15.2
+      jupytext_version: 1.16.0
   kernelspec:
     display_name: Python 3 (ipykernel)
     language: python
@@ -68,23 +68,9 @@ ax2.set_title("White Defendent's Decile Scores");
 ```
 
 ```{python}
-df['Index'] = df.index
-african_american_barchart = df[df['race'] == 'African-American'].groupby(['decile_score'])['Index'].unique().apply(len)
-caucasian_barchart = df[df['race'] == 'Caucasian'].groupby(['decile_score'])['Index'].unique().apply(len)
-```
-
-```{python}
-df['Index'] = df.index
-
-```
-
-```{python}
 model = smf.logit(formula='score_text_low_high_HighScore ~ sex_Female + age_cat_Less_than_25 + age_cat_Greater_than_45 + race_African_American + race_Asian + race_Hispanic + race_Native_American + race_Other + priors_count + c_charge_degree_M + two_year_recid', data=df).fit()
 display(model.summary())
 ```
-
-## DO NOT FORGET TO DO LOG ODDS HERE
-
 
 ## Calculating Odds Ratios
 Why did they do this so differently?
@@ -359,8 +345,6 @@ ax2.grid()
 ```
 
 ```{python}
-
-```{python}
 black_cm_df = cm_df[cm_df['race'] == 'African-American']
 cm = confusion_matrix(y_true=black_cm_df['truth_table_recid'],y_pred=black_cm_df['truth_table_score'],labels=['Survivor','Recidivist'])
 fig = ConfusionMatrixDisplay(cm,display_labels=['Survivor','Recidivist'])
@@ -542,16 +526,6 @@ print(f"According to the logistic regression, on average: \nA defendant with one
 ### Further Analysis
 
 ```{python}
-df['predicted_recid'] = df['juv_fel_count'] * prior_recid_model.params.juv_fel_count + df['juv_misd_count'] * prior_recid_model.params.juv_misd_count + df['juv_other_count'] * prior_recid_model.params.juv_other_count + df['priors_count'] * prior_recid_model.params.priors_count + prior_recid_model.params.Intercept
-plt.hist2d(df['predicted_recid'],df['is_recid'],bins=(20,2),cmap='Blues', norm=LogNorm())
-plt.yticks([0,1])
-plt.xlabel('Logistic Regression Prediction')
-plt.ylabel('Recidivist')
-plt.title('Recidivist Prediction vs Actual', fontdict={'weight':'bold', 'size':16})
-cbar = plt.colorbar()
-```
-
-```{python}
 from matplotlib.lines import Line2D
 df['predicted_recid'] = df['juv_fel_count'] * prior_recid_model.params.juv_fel_count + df['juv_misd_count'] * prior_recid_model.params.juv_misd_count + df['juv_other_count'] * prior_recid_model.params.juv_other_count + df['priors_count'] * prior_recid_model.params.priors_count + prior_recid_model.params.Intercept
 recid_data = df[df['is_recid'] == 1]['predicted_recid']
@@ -627,6 +601,10 @@ charges_df['Charges']
 ```
 
 ```{python}
+string.punctuation
+```
+
+```{python}
 def valence_average(x):
     scores = []
     for i in range(len(x)):
@@ -671,11 +649,117 @@ charges_df['Dominance'] = charges_df['Charges'].apply(dominance_average)
 ```{python}
 def combine_and_lower(x):
     return (' ').join([string.lower() for string in x])    
-charges_df['Charges'].apply(combine_and_lower)
+charges_df['Combined Charge'] = charges_df['Charges'].apply(combine_and_lower)
 ```
 
 ```{python}
+#creating mean decile score and is_recid proportion dictionaries
+charges_mean_decile_score = df.groupby('lemmatized_charges')['decile_score'].mean()
+charges_mean_decile_score = pd.DataFrame({'Charge':charges_mean_decile_score.index,'Mean Decile Score':charges_mean_decile_score.values})
+charges_mean_decile_score['Charge'] = charges_mean_decile_score['Charge'].str.lower()
+charges_mean_decile_score_dict = charges_mean_decile_score.set_index('Charge')['Mean Decile Score'].to_dict()
 
+charges_is_recid_prop = df.groupby('lemmatized_charges')['is_recid'].mean()
+charges_is_recid_prop = pd.DataFrame({'Charge':charges_is_recid_prop.index,'Recidivist Proportion':charges_is_recid_prop.values})
+charges_is_recid_prop['Charge'] = charges_mean_decile_score['Charge'].str.lower()
+charges_is_recid_prop_dict = charges_is_recid_prop.set_index('Charge')['Recidivist Proportion'].to_dict()
+```
+
+```{python}
+def mean_decile_score_finder(charge):
+    return charges_mean_decile_score_dict.get(charge)
+def recid_proportion_finder(charge):
+    return charges_is_recid_prop_dict.get(charge)
+
+charges_df['Mean_Decile_Score'] = charges_df['Combined Charge'].apply(mean_decile_score_finder)
+charges_df['Recidivist_Proportion'] = charges_df['Combined Charge'].apply(recid_proportion_finder)
+```
+
+```{python}
+charges_df = charges_df.dropna(subset=['Mean_Decile_Score','Valence'])
+charges_df
+```
+
+```{python}
+nlp_decile_model = smf.ols(formula='Mean_Decile_Score ~ Valence + Arousal + Dominance', data=charges_df).fit()
+nlp_decile_model.summary()
+```
+
+#### NLP Decile Model Conclusions
+From this regression equation, we can see that the valence, arousal or dominance of the words contained in a charge are not significant in determining someone's COMPAS score. This means that these figures were not used in determining the COMPAS scores, however, this could have been assumed.  
+This means that either the severity of the previous charge does not impact a defendant's COMPAS scores, or more likely these valence, arousal and dominance values are not accurate indicators of the severity of a charge.  
+  
+This could be because of:
+- Some words not being measured because of spelling errors or other formatting errors. Leading to the charge's scores not being accurate of the whole charge
+- The description of these charges not having enough detail to represent the crime commited
+- Words having dual meanings leading to erroneous VAD values (i.e. battery)
+
+
+```{python}
+nlp_recidivism_model = smf.ols(formula='Recidivist_Proportion ~ Valence + Arousal + Dominance', data=charges_df).fit()
+nlp_recidivism_model.summary()
+```
+
+#### NLP Recidivism Model Conclusions
+From this model, we can see that the valence, arousal and dominance of the words contained in a charge are not significant in determining whether someone will recidivise or not.  
+This is likely for similar reasons as mentioned above.
+
+
+### Using Maximum Sentence as a Proxy for Previous Crime Severity
+
+```{python}
+#taking the frequency of each charge and sorting these by 
+most_common_charges = pd.DataFrame(df.groupby('c_charge_desc')['id'].unique().apply(len).sort_values(ascending=False)).rename(columns={'id':'Frequency'})
+most_common_charges = most_common_charges[most_common_charges['Frequency'] > 50]
+
+#taking the maximum sentence in years for each of these crimes (source: goldman wetzel)
+most_common_charges['Maximum_Sentence_Years'] = [1, 0, 15, 5, 0.16, 0.5, 5, 5, 5, 5, 1, 5, 15, 1, 1, 5, 0, 5, 15, 5, 0.75, 5, 5, 5, 0, 15]
+most_common_charges.index = most_common_charges.index.str.lower()
+charge_sentences_dict = most_common_charges['Maximum_Sentence_Years'].to_dict()
+```
+
+```{python}
+df['c_charge_degree'].value_counts()
+charge_sentences_dict = {'(F3)':5,'(M1)':1, '(M2)': 0.16, '(F2)': 15, '(F1)': 30}
+charge_sentences_dict
+```
+
+```{python}
+#creating new column with the maximum sentence for their previous charge
+df['c_maximum_sentence'] = df['c_charge_degree'].apply(lambda x: charge_sentences_dict.get(x,np.nan))
+
+#training linear regression model
+max_sentence_compas_model = smf.ols(formula='decile_score ~ c_maximum_sentence', data=df).fit()
+max_sentence_compas_model.summary()
+```
+
+For this linear regression model, the maximum sentence associated with their previous charge has a highly significant impact on increasing their decile score.  
+This indicates that the severity of a defendant's charge, which is being represented here by the charge's maximum sentence, does in fact impact their COMPAS decile score.  
+ 
+To check for multicollinearity (a high correlation between the maximum sentence of their charge and other factors which determine COMPAS score), we can create a linear regression model which considers other factors to determine whether c_maximum_sentence adds to the data.
+
+```{python}
+df = pd.read_csv('
+df['c_maximum_sentence'] = df['c_charge_degree'].apply(lambda x: charge_sentences_dict.get(x,np.nan))
+#dummies_df = dummies_df.dropna(subset=['c_maximum_sentence'])
+
+
+decile_model_max_sentence = smf.ols(formula='decile_score ~ c_maximum_sentence + juv_fel_counts + priors_count + juv_misd_count +', data=dummies_df).fit()
+#decile_model_max_sentence.summary()
+```
+
+```{python}
+#reading in cox-parsed and removing duplicate rows so each row represents an individual
+df = pd.read_csv('CompasAnalysis/cox-parsed.csv')
+df = df[~df['id'].duplicated(keep='first')]
+df['c_maximum_sentence'] = df['c_charge_degree'].apply(lambda x: charge_sentences_dict.get(x,np.nan))
+
+decile_model_max_sentence = smf.ols(formula='decile_score ~ c_maximum_sentence + priors_count + juv_fel_count  + juv_misd_count + juv_other_count', data=df).fit()
+decile_model_max_sentence.summary()
+```
+
+```{python}
+df.columns
 ```
 
 ```{python}
